@@ -1,0 +1,44 @@
+SMARTFOOD OPS 360
+PRD — Versão Simplificada
+Engenharia de Alimentos  ·  Etiquetas  ·  Insumos e Fornecedores
+Visão Geral
+O SmartFood Ops 360 começa pelos 3 pilares que realmente impactam a margem de uma cozinha industrial de salgados: saber o custo real de cada receita, imprimir a etiqueta certa no lote certo, e conhecer o rendimento real de cada marca de insumo comprada.
+Stack Técnica
+Estrutura de Pastas do Projeto
+1.1  Objetivo
+Permitir que o Chef monte a receita de qualquer salgado dividida em seções livres (Massa, Recheio, Cobertura...), com cálculo automático de custo real usando Fator de Correção e Fator de Cocção por ingrediente.
+1.2  Conceitos de Engenharia de Alimentos
+1.3  Fórmula Mestre
+1.4  Modelo de Dados — Módulo 1
+1.5  Telas do Módulo 1
+2.1  Objetivo
+Editor visual de etiquetas térmicas que mostra em tempo real como a etiqueta vai ficar antes de enviar para a impressora. Compatível com Zebra (ZPL) e Elgin/Argox (TSPL). Campos preenchidos automaticamente a partir do lote de produção.
+2.2  Parâmetros da Etiqueta
+2.3  Tela do Editor de Etiqueta
+2.4  Preview HTML da Etiqueta
+O preview é um div HTML estilizado com Tailwind que simula a aparência física da etiqueta. Fundo branco, borda preta, fonte monoespaçada, proporção em escala. O QR Code é um SVG gerado via biblioteca qrcode Python ou placeholder visual.
+2.5  Modelo de Dados — Módulo 2
+3.1  Objetivo
+Separar o insumo genérico (ex: 'Peito de Frango') de suas marcas reais (Seara, Frisa, Aurora). Cada marca tem seu próprio Fator de Correção, percentual de rendimento e preço de compra. Assim o custo na Ficha Técnica usa o rendimento real da marca que você compra.
+3.2  Hierarquia de Cadastro
+3.3  Modelo de Dados — Módulo 3
+3.4  Telas do Módulo 3
+Sequência de Desenvolvimento para o Jules
+Execute os prompts nesta ordem. Cada etapa depende da anterior. Não avance sem o anterior funcionar.
+SmartFood Ops 360  ·  PRD Simplificado  ·  3 Módulos Essenciais  ·  Confidencial
+
+=== TABLES ===
+
+
+Table 1:
+3 módulos  ·  1 stack Python/HTML  ·  Pronto para Jules / Google AI Studio
+
+FastAPI  +  SQLAlchemy  +  HTMX  +  Tailwind CSS  +  Alpine.js
+
+Table 2:
+Traceback (most recent call last):
+  File "<stdin>", line 19, in <module>
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3312.0_x64__qbz5n2kfra8p0\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\U0001f9ea' in position 0: character maps to <undefined>

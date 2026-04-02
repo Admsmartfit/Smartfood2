@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartFood Ops 360 — Cadastros</title>
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Outfit', sans-serif; background: #0f172a; color: #f8fafc; }
+    .glass { background: rgba(30,41,59,.7); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,.1); border-radius: 1rem; }
+
+    /* inputs */
+    input, select {
+      background: #1e293b; border: 1px solid #334155; border-radius: .5rem;
+      padding: .5rem .75rem; color: #f1f5f9; min-height: 44px; width: 100%;
+    }
+    input:focus, select:focus { border-color: #3b82f6; outline: 2px solid rgba(59,130,246,.25); }
+
+    /* Ação principal — min 48px */
+    .btn-primary {
+      background: linear-gradient(135deg,#3b82f6,#2563eb); min-height:48px;
+      border-radius:.625rem; font-weight:600; display:flex; align-items:center;
+      justify-content:center; width:100%; transition:all .15s; cursor:pointer;
+    }
+    .btn-primary:hover { filter: brightness(1.1); transform: translateY(-1px); }
+
+    /* Botões de ação de ícone (edit/delete) — min 40px para toque fácil */
+    .icon-btn {
+      display:inline-flex; align-items:center; justify-content:center;
+      min-width:36px; min-height:36px; border-radius:.5rem; transition:all .1s;
+      cursor:pointer; padding:4px; font-size:14px; background:transparent;
+      border:none;
+    }
+    .icon-btn:hover { background: rgba(255,255,255,.07); }
+
+    /* inline field (edit mode) */
+    .field { background:#1e293b; border:1px solid #334155; border-radius:.5rem;
+             padding:.4rem .6rem; color:#f1f5f9; min-height:40px; }
+    .field:focus { border-color:#3b82f6; outline:2px solid rgba(59,130,246,.2); }
+
+    /* item-row spacing */
+    .item-row + .item-row { margin-top:.375rem; }
+
+    [x-cloak] { display:none !important; }
+  </style>
+</head>
+<body class="min-h-screen p-4 sm:p-6" x-data="crudApp()">
+<div class="max-w-6xl mx-auto">
+
+  <!-- ── Nav ──────────────────────────────────────────────────── -->
+  <header class="mb-6 relative">
+    <div class="flex flex-wrap gap-x-5 gap-y-1 justify-end mb-2 text-sm">
+      <a href="/"             class="text-blue-400 font-semibold">📦 Cadastros</a>
+      <a href="/precos"       class="text-slate-400 hover:text-white">💰 Cotações</a>
+      <a href="/ficha-tecnica" class="text-slate-400 hover:text-white">📋 Ficha Técnica</a>
+      <a href="/labels"       class="text-slate-400 hover:text-white">🏷️ Etiquetas</a>
+      <a href="/dashboard"    class="text-slate-400 hover:text-white">📊 Dashboard</a>
+    </div>
+    <div class="text-center">
+      <h1 class="text-3xl sm:text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-500">
+        SmartFood Ops 360
+      </h1>
+      <p class="text-slate-400 mt-1 text-sm">Gestão de Ingredientes, Marcas e Fornecedores</p>
+    </div>
+  </header>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       GRID: 3 colunas (ingredientes | marcas | fornecedores)
+  ═══════════════════════════════════════════════════════════ -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6">
+
+    <!-- ── INGREDIENTES ──────────────────────────────────────── -->
+    <div class="glass p-5 space-y-4">
+      <h2 class="text-base font-semibold border-b border-slate-700 pb-2">📦 Ingredientes</h2>
+
+      <form hx-post="/ingredients"
+            hx-target="#ingredients-list"
+            hx-swap="afterbegin"
+            @htmx:after-request="$event.detail.successful && $refs.ingForm.reset()"
+            x-ref="ingForm"
+            class="space-y-2">
+        <input type="text" name="name" placeholder="Nome (ex: Peito de Frango)" required />
+        <input type="text" name="unit" placeholder="Unidade: kg, L, un" required />
+        <button type="submit" class="btn-primary text-sm text-white">+ Cadastrar Ingrediente</button>
+      </form>
+
+      <!-- Lista existente -->
+      <div id="ingredients-list" class="space-y-1.5 max-h-72 overflow-y-auto pr-1">
+        {% for ing in ingredients %}
+        <div id="ing-{{ ing.id }}" class="item-row flex items-center gap-2 p-2 rounded-lg bg-slate-800/60 border border-slate-700/50"
+             x-data="{editing:false, n:'{{ ing.name | replace("'","&#39;") }}', u:'{{ ing.unit | replace("'","&#39;") }}'}">
+
+          <!-- View -->
+          <div x-show="!editing" class="flex-1 flex items-center justify-between min-h-[44px]">
+            <span class="text-sm text-white">
+              <span x-text="n"></span>
+              <span class="text-slate-500 text-xs">(<span x-text="u"></span>)</span>
+            </span>
+            <div class="flex gap-0.5">
+              <button @click="editing=true" class="icon-btn text-slate-400 hover:text-blue-400" title="Editar">✏️</button>
+              <button hx-delete="/ingredients/{{ ing.id }}"
+                      hx-target="#ing-{{ ing.id }}" hx-swap="outerHTML"
+                      hx-confirm="Excluir '{{ ing.name }}'? Suas marcas e catálogo também serão removidos."
+                      class="icon-btn text-slate-400 hover:text-red-400" title="Excluir">🗑️</button>
+            </div>
+          </div>
+
+          <!-- Edit -->
+          <div x-show="editing" x-cloak class="flex-1 flex flex-wrap items-center gap-1.5">
+            <input x-model="n" class="field flex-1 min-w-[100px] text-sm" placeholder="Nome" />
+            <input x-model="u" class="field w-14 text-sm text-center" placeholder="un" />
+            <button @click="saveIng({{ ing.id }}, n, u, $el)" class="icon-btn text-green-400 hover:text-green-300">💾</button>
+            <button @click="editing=false" class="icon-btn text-slate-400 hover:text-white">✕</button>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      {% if not ingredients %}
+      <p class="text-xs text-slate-600 text-center py-2">Nenhum ingrediente cadastrado.</p>
+      {% endif %}
+    </div>
+
+    <!-- ── MARCAS / FABRICANTES ──────────────────────────────── -->
+    <div class="glass p-5 space-y-4">
+      <h2 class="text-base font-semibold border-b border-slate-700 pb-2">🏢 Marcas / Fabricantes</h2>
+
+      <form hx-post="/manufacturers"
+            hx-target="#manufacturers-list"
+            hx-swap="afterbegin"
+            @htmx:after-request="$event.detail.successful && $refs.manForm.reset()"
+            x-ref="manForm"
+            class="space-y-2">
+        <select name="ingredient_id" class="ingredient-select" required>
+          <option value="">Ingrediente...</option>
+          {% for ing in ingredients %}
+          <option value="{{ ing.id }}">{{ ing.name }}</option>
+          {% endfor %}
+        </select>
+        <input type="text" name="brand_name" placeholder="Marca (ex: Seara)" required />
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-xs text-slate-500">Rendimento (%)</label>
+            <input type="number" name="yield_percentage" value="100" step="0.1" min="1" max="200" />
+          </div>
+          <div>
+            <label class="text-xs text-slate-500">Qualidade (1-5)</label>
+            <input type="number" name="quality_score" value="5" min="1" max="5" />
+          </div>
+        </div>
+        <button type="submit" class="btn-primary text-sm text-white">+ Cadastrar Marca</button>
+      </form>
+
+      <!-- Lista existente -->
+      <div id="manufacturers-list" class="space-y-1.5 max-h-72 overflow-y-auto pr-1">
+        {% for m in manufacturers %}
+        <div id="man-{{ m.id }}" class="item-row flex items-center gap-2 p-2 rounded-lg bg-slate-800/60 border border-slate-700/50"
+             x-data="{editing:false, b:'{{ m.brand_name | replace("'","&#39;") }}', y:{{ m.yield_percentage }}, q:{{ m.quality_score }}}">
+
+          <!-- View -->
+          <div x-show="!editing" class="flex-1 flex items-center justify-between min-h-[44px]">
+            <span class="text-sm text-white">
+              <span x-text="b"></span>
+              <span class="text-slate-500 text-xs">
+                · {{ m.ingredient.name }} · rend. <span x-text="y"></span>%
+              </span>
+            </span>
+            <div class="flex gap-0.5">
+              <button @click="editing=true" class="icon-btn text-slate-400 hover:text-blue-400" title="Editar">✏️</button>
+              <button hx-delete="/manufacturers/{{ m.id }}"
+                      hx-target="#man-{{ m.id }}" hx-swap="outerHTML"
+                      hx-confirm="Excluir marca '{{ m.brand_name }}'?"
+                      class="icon-btn text-slate-400 hover:text-red-400" title="Excluir">🗑️</button>
+            </div>
+          </div>
+
+          <!-- Edit -->
+          <div x-show="editing" x-cloak class="flex-1 flex flex-wrap items-center gap-1.5">
+            <input x-model="b" class="field flex-1 min-w-[100px] text-sm" placeholder="Marca" />
+            <input x-model="y" type="number" step="0.1" class="field w-20 text-sm" placeholder="Rend.%" />
+            <input x-model="q" type="number" min="1" max="5" class="field w-14 text-sm" placeholder="★" />
+            <button @click="saveMan({{ m.id }}, b, y, q, $el)" class="icon-btn text-green-400 hover:text-green-300">💾</button>
+            <button @click="editing=false" class="icon-btn text-slate-400 hover:text-white">✕</button>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      {% if not manufacturers %}
+      <p class="text-xs text-slate-600 text-center py-2">Nenhuma marca cadastrada.</p>
+      {% endif %}
+    </div>
+
+    <!-- ── FORNECEDORES ──────────────────────────────────────── -->
+    <div class="glass p-5 space-y-4">
+      <h2 class="text-base font-semibold border-b border-slate-700 pb-2">🤝 Fornecedores</h2>
+
+      <form hx-post="/suppliers"
+            hx-target="#suppliers-list"
+            hx-swap="afterbegin"
+            @htmx:after-request="$event.detail.successful && $refs.supForm.reset()"
+            x-ref="supForm"
+            class="space-y-2">
+        <input type="text" name="name" placeholder="Nome do Fornecedor" required />
+        <input type="text" name="contact_info" placeholder="Contato (Email / Telefone)" />
+        <button type="submit" class="btn-primary text-sm text-white">+ Cadastrar Fornecedor</button>
+      </form>
+
+      <!-- Lista existente -->
+      <div id="suppliers-list" class="space-y-1.5 max-h-72 overflow-y-auto pr-1">
+        {% for s in suppliers %}
+        <div id="sup-{{ s.id }}" class="item-row flex items-center gap-2 p-2 rounded-lg bg-slate-800/60 border border-slate-700/50"
+             x-data="{editing:false, n:'{{ s.name | replace("'","&#39;") }}', c:'{{ (s.contact_info or "") | replace("'","&#39;") }}'}">
+
+          <!-- View -->
+          <div x-show="!editing" class="flex-1 flex items-center justify-between min-h-[44px]">
+            <span class="text-sm text-white">
+              <span x-text="n"></span>
+              <span class="text-slate-500 text-xs" x-show="c"> · <span x-text="c"></span></span>
+            </span>
+            <div class="flex gap-0.5">
+              <button @click="editing=true" class="icon-btn text-slate-400 hover:text-blue-400" title="Editar">✏️</button>
+              <button hx-delete="/suppliers/{{ s.id }}"
+                      hx-target="#sup-{{ s.id }}" hx-swap="outerHTML"
+                      hx-confirm="Excluir fornecedor '{{ s.name }}'? Entradas de catálogo também serão removidas."
+                      class="icon-btn text-slate-400 hover:text-red-400" title="Excluir">🗑️</button>
+            </div>
+          </div>
+
+          <!-- Edit -->
+          <div x-show="editing" x-cloak class="flex-1 flex flex-wrap items-center gap-1.5">
+            <input x-model="n" class="field flex-1 min-w-[120px] text-sm" placeholder="Nome" />
+            <input x-model="c" class="field flex-1 min-w-[120px] text-sm" placeholder="Contato" />
+            <button @click="saveSup({{ s.id }}, n, c, $el)" class="icon-btn text-green-400 hover:text-green-300">💾</button>
+            <button @click="editing=false" class="icon-btn text-slate-400 hover:text-white">✕</button>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      {% if not suppliers %}
+      <p class="text-xs text-slate-600 text-center py-2">Nenhum fornecedor cadastrado.</p>
+      {% endif %}
+    </div>
+  </div><!-- /3-col grid -->
+
+  <!-- ═══════════════════════════════════════════════════════════
+       CATÁLOGO — form rápido + link para módulo de preços
+  ═══════════════════════════════════════════════════════════ -->
+  <div class="glass p-5">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 border-b border-slate-700 pb-3">
+      <h2 class="text-base font-semibold">📑 Catálogo de Compras</h2>
+      <a href="/precos"
+         class="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold
+                rounded-lg px-4 min-h-[48px] transition">
+        💰 Gerenciar Cotações e Preços →
+      </a>
+    </div>
+
+    <!-- Quick-add form -->
+    <form hx-post="/catalog" hx-target="#catalog-body" hx-swap="afterbegin" class="space-y-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <select name="supplier_id" class="supplier-select" required>
+          <option value="">Fornecedor...</option>
+          {% for s in suppliers %}
+          <option value="{{ s.id }}">{{ s.name }}</option>
+          {% endfor %}
+        </select>
+
+        <select name="ingredient_id" class="ingredient-select"
+                hx-get="/manufacturers-search" hx-trigger="change"
+                hx-target="#manufacturer-select" required>
+          <option value="">Ingrediente...</option>
+          {% for ing in ingredients %}
+          <option value="{{ ing.id }}">{{ ing.name }}</option>
+          {% endfor %}
+        </select>
+
+        <select id="manufacturer-select" name="manufacturer_id" required>
+          <option value="">Marca (selecione ingred.)</option>
+        </select>
+
+        <input type="number" step="0.01" name="last_price" placeholder="Preço R$" required />
+      </div>
+      <button type="submit" class="btn-primary text-sm text-white sm:w-auto sm:px-8">Registrar Preço</button>
+    </form>
+
+    <!-- Catalog table -->
+    <div class="overflow-x-auto mt-4">
+      <table class="w-full text-sm">
+        <thead class="text-xs text-slate-500 uppercase border-b border-slate-700">
+          <tr>
+            <th class="text-left pb-2 px-2">Fornecedor</th>
+            <th class="text-left pb-2 px-2">Ingrediente</th>
+            <th class="text-left pb-2 px-2">Marca</th>
+            <th class="text-right pb-2 px-2">Preço</th>
+            <th class="pb-2 px-2"></th>
+          </tr>
+        </thead>
+        <tbody id="catalog-body" class="divide-y divide-slate-800">
+          {% for e in catalog %}
+          <tr id="cat-{{ e.id }}" class="hover:bg-slate-800/30">
+            <td class="py-2 px-2 text-slate-300">{{ e.supplier.name }}</td>
+            <td class="py-2 px-2 text-slate-300">{{ e.ingredient.name }}</td>
+            <td class="py-2 px-2 text-slate-400">{{ e.manufacturer.brand_name }}</td>
+            <td class="py-2 px-2 text-right font-medium text-blue-300">R$ {{ "%.2f"|format(e.last_price) }}</td>
+            <td class="py-2 px-2 text-right">
+              <a href="/precos" class="text-xs text-slate-500 hover:text-blue-400">✏️ editar</a>
+              <button hx-delete="/catalog/{{ e.id }}"
+                      hx-target="#cat-{{ e.id }}" hx-swap="outerHTML"
+                      hx-confirm="Remover esta entrada do catálogo?"
+                      class="icon-btn text-slate-500 hover:text-red-400 ml-1">🗑️</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if not catalog %}
+      <p class="text-center text-slate-600 text-sm py-6">
+        Nenhuma entrada de catálogo. Use o formulário acima ou acesse
+        <a href="/precos" class="text-blue-400 underline">Cotações</a>.
+      </p>
+      {% endif %}
+    </div>
+  </div>
+
+</div><!-- /max-w -->
+
+<script>
+function crudApp() {
+  return {
+
+    async _put(url, body) {
+      return fetch(url, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams(body).toString(),
+      });
+    },
+
+    async saveIng(id, name, unit, btn) {
+      await this._put(`/ingredients/${id}`, { name, unit });
+      // Close edit mode: walk up to x-data root and set editing=false
+      btn.closest('[x-data]').__x.$data.editing = false;
+    },
+
+    async saveMan(id, brand_name, yield_percentage, quality_score, btn) {
+      await this._put(`/manufacturers/${id}`, { brand_name, yield_percentage, quality_score });
+      btn.closest('[x-data]').__x.$data.editing = false;
+    },
+
+    async saveSup(id, name, contact_info, btn) {
+      await this._put(`/suppliers/${id}`, { name, contact_info: contact_info || '' });
+      btn.closest('[x-data]').__x.$data.editing = false;
+    },
+  };
+}
+</script>
+</body>
+</html>

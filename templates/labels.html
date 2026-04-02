@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartFood Ops 360 — Etiquetas</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+    body { background-color: #0f172a; font-family: 'Outfit', 'Inter', sans-serif; }
+    textarea.mono { font-family: 'Courier New', Courier, monospace; font-size: 11px; }
+
+    /* All inputs and selects */
+    .field {
+      background: #1e293b; border: 1px solid #334155; border-radius: .5rem;
+      padding: .5rem .75rem; color: #f1f5f9; min-height: 44px; width: 100%;
+    }
+    .field:focus { border-color: #3b82f6; outline: 2px solid rgba(59,130,246,.25); }
+
+    /* Primary button — always >= 48px */
+    .btn {
+      display: flex; align-items: center; justify-content: center;
+      min-height: 48px; border-radius: .625rem; font-weight: 600;
+      padding: 0 1rem; transition: all .15s; cursor: pointer; width: 100%;
+    }
+    .btn-blue   { background: #2563eb; color: #fff; }
+    .btn-blue:hover   { background: #3b82f6; }
+    .btn-green  { background: #059669; color: #fff; }
+    .btn-green:hover  { background: #10b981; }
+    .btn-purple { background: #7c3aed; color: #fff; }
+    .btn-purple:hover { background: #8b5cf6; }
+    .btn-slate  { background: #334155; color: #cbd5e1; }
+    .btn-slate:hover  { background: #475569; }
+
+    /* ── Batch table → mobile cards ─────────────────────────────────────
+       On screens < 640px, hide the thead and turn each <tr> into a card.
+       Each <td> shows its column name via data-label.
+    ───────────────────────────────────────────────────────────────────── */
+    @media (max-width: 639px) {
+      .batch-table thead              { display: none; }
+      .batch-table tbody tr           {
+        display: block; background: rgba(30,41,59,.9);
+        border-radius: .75rem; margin-bottom: .6rem;
+        padding: .75rem 1rem; border: 1px solid rgba(255,255,255,.07);
+      }
+      .batch-table tbody td           {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: .25rem 0; border: none; font-size: .875rem;
+      }
+      .batch-table tbody td::before   {
+        content: attr(data-label); color: #64748b;
+        font-size: .7rem; font-weight: 500; text-transform: uppercase;
+        letter-spacing: .04em; margin-right: .5rem;
+      }
+    }
+  </style>
+</head>
+<body class="text-gray-100 min-h-screen p-3 sm:p-5">
+
+  <!-- ── Nav ──────────────────────────────────────────────────── -->
+  <header class="flex flex-wrap items-center gap-x-5 gap-y-2 mb-5 border-b border-slate-700 pb-3">
+    <h1 class="text-base sm:text-xl font-bold text-white tracking-tight mr-2">SmartFood Ops 360</h1>
+    <nav class="flex flex-wrap gap-3 text-sm">
+      <a href="/"              class="text-gray-400 hover:text-white transition">📦 Insumos</a>
+      <a href="/ficha-tecnica" class="text-gray-400 hover:text-white transition">📋 Ficha Técnica</a>
+      <a href="/labels"        class="text-blue-400 font-semibold border-b border-blue-400 pb-0.5">🏷️ Etiquetas</a>
+      <a href="/dashboard"     class="text-gray-400 hover:text-white transition">📊 Dashboard</a>
+    </nav>
+  </header>
+
+  <div x-data="labelApp()" class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+    <!-- ══════════════════════════════════════════
+         COL 1 — Template management
+    ═══════════════════════════════════════════ -->
+    <div class="space-y-4">
+
+      <!-- Create Template -->
+      <section class="bg-slate-800 rounded-xl p-4 border border-slate-700">
+        <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-3">
+          Novo Template de Etiqueta
+        </h2>
+        <form hx-post="/labels"
+              hx-target="#template-select"
+              hx-swap="beforeend"
+              @htmx:after-request="$event.detail.successful && $refs.tplForm.reset()"
+              x-ref="tplForm"
+              class="space-y-2">
+
+          <input type="text" name="name" placeholder="Nome do template"
+                 class="field text-sm" required />
+
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="text-xs text-slate-400">Largura (mm)</label>
+              <input type="number" name="width_mm" value="62" step="0.5" min="10"
+                     class="field text-sm" />
+            </div>
+            <div>
+              <label class="text-xs text-slate-400">Altura (mm)</label>
+              <input type="number" name="height_mm" value="40" step="0.5" min="10"
+                     class="field text-sm" />
+            </div>
+          </div>
+
+          <div>
+            <label class="text-xs text-slate-400">Tipo de Impressora</label>
+            <select name="printer_type" class="field text-sm">
+              <option value="ZPL">ZPL — Zebra</option>
+              <option value="TSPL">TSPL — Elgin / Argox / TSC</option>
+            </select>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2">
+            <div class="col-span-2">
+              <label class="text-xs text-slate-400">IP da Impressora</label>
+              <input type="text" name="printer_ip" placeholder="192.168.1.100"
+                     class="field text-sm font-mono" />
+            </div>
+            <div>
+              <label class="text-xs text-slate-400">Porta</label>
+              <input type="number" name="printer_port" value="9100"
+                     class="field text-sm" />
+            </div>
+          </div>
+
+          <div>
+            <label class="text-xs text-slate-400 flex items-center gap-2">
+              Campos (JSON)
+              <button type="button" @click="fillDefaultFields()"
+                      class="text-blue-400 hover:text-blue-300 text-xs underline font-normal">
+                Preencher padrão
+              </button>
+            </label>
+            <textarea name="fields_config" x-ref="fieldsInput" rows="8"
+                      class="mono field resize-y text-green-300 bg-slate-900"
+                      placeholder='[{"field":"product_name","x":2,"y":3,"font_size_mm":4.5,"bold":true}, ...]'
+            ></textarea>
+          </div>
+
+          <button type="submit" class="btn btn-blue text-sm">Criar Template</button>
+        </form>
+      </section>
+
+      <!-- Template selector -->
+      <section class="bg-slate-800 rounded-xl p-4 border border-slate-700">
+        <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-2">
+          Templates Salvos
+        </h2>
+        <select id="template-select" size="5"
+                class="w-full bg-slate-900 text-white rounded px-2 py-1 text-sm min-h-[80px]"
+                x-model="selectedTemplate"
+                @change="previewTemplate()">
+          <option value="">— selecione —</option>
+          {% for t in label_templates %}
+          <option value="{{ t.id }}">{{ t.name }} ({{ t.width_mm }}×{{ t.height_mm }} mm — {{ t.printer_type }})</option>
+          {% endfor %}
+        </select>
+
+        <button @click="showCommand()"
+                x-show="selectedTemplate"
+                x-cloak
+                class="btn btn-slate text-xs mt-2">
+          Ver Comando ZPL/TSPL
+        </button>
+        <div id="command-output" class="mt-2"></div>
+      </section>
+
+    </div>
+
+    <!-- ══════════════════════════════════════════
+         COL 2 — Label Preview
+    ═══════════════════════════════════════════ -->
+    <div class="space-y-4">
+
+      <section class="bg-slate-800 rounded-xl p-4 border border-slate-700">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+          <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wide">
+            Preview da Etiqueta
+          </h2>
+          <select x-model="selectedBatch" @change="previewTemplate()"
+                  class="field text-xs sm:w-auto">
+            <option value="">Dados de exemplo</option>
+            {% for b in batches %}
+            <option value="{{ b.id }}">{{ b.batch_number }} — {{ b.product_name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div id="label-preview"
+             class="flex items-center justify-center min-h-[160px] bg-gray-200 rounded-lg p-4 overflow-auto">
+          <span class="text-gray-500 text-sm">Selecione um template para visualizar</span>
+        </div>
+      </section>
+
+      <!-- Print action -->
+      <section class="bg-slate-800 rounded-xl p-4 border border-slate-700"
+               x-show="selectedTemplate" x-cloak>
+        <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-3">
+          Imprimir via TCP
+        </h2>
+        <form :action="'/labels/' + selectedTemplate + '/print'"
+              hx-post
+              hx-target="#print-result"
+              hx-swap="innerHTML"
+              class="space-y-2">
+          <div>
+            <label class="text-xs text-slate-400">Lote</label>
+            <select name="batch_id" required class="field text-sm">
+              <option value="">— selecione um lote —</option>
+              {% for b in batches %}
+              <option value="{{ b.id }}">{{ b.batch_number }} — {{ b.product_name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <button type="submit" class="btn btn-green">🖨️ Enviar para Impressora</button>
+        </form>
+        <div id="print-result" class="mt-2"></div>
+      </section>
+
+    </div>
+
+    <!-- ══════════════════════════════════════════
+         COL 3 — Batch management
+    ═══════════════════════════════════════════ -->
+    <div class="space-y-4">
+
+      <!-- Create batch -->
+      <section class="bg-slate-800 rounded-xl p-4 border border-slate-700">
+        <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-3">
+          Registrar Lote de Produção
+        </h2>
+        <form hx-post="/batches"
+              hx-target="#batch-table-body"
+              hx-swap="afterbegin"
+              @htmx:after-request="$event.detail.successful && $refs.batchForm.reset()"
+              x-ref="batchForm"
+              class="space-y-2">
+
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="text-xs text-slate-400">Nº do Lote</label>
+              <input type="text" name="batch_number" placeholder="L-2024-001"
+                     class="field text-sm" required />
+            </div>
+            <div>
+              <label class="text-xs text-slate-400">Produto</label>
+              <input type="text" name="product_name" placeholder="Frango Grelhado"
+                     class="field text-sm" required />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="text-xs text-slate-400">Validade</label>
+              <input type="date" name="expiry_date" class="field text-sm" required />
+            </div>
+            <div>
+              <label class="text-xs text-slate-400">Peso (kg)</label>
+              <input type="number" name="weight_kg" step="0.001" min="0" value="0"
+                     class="field text-sm" />
+            </div>
+          </div>
+
+          <div>
+            <label class="text-xs text-slate-400">Ingredientes (resumo p/ etiqueta)</label>
+            <input type="text" name="ingredients_summary"
+                   placeholder="Frango, Alho, Azeite, Sal"
+                   class="field text-sm" />
+          </div>
+
+          <div>
+            <label class="text-xs text-slate-400">Template de Etiqueta</label>
+            <select name="label_template_id" class="field text-sm">
+              <option value="">— nenhum —</option>
+              {% for t in label_templates %}
+              <option value="{{ t.id }}">{{ t.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <!-- QR Code URLs -->
+          <div class="bg-slate-900 rounded-lg p-3 space-y-2 border border-slate-700">
+            <p class="text-xs text-slate-400 font-medium">🔗 URLs do QR Code Dinâmico</p>
+            <div>
+              <label class="text-xs text-slate-500">Tutorial de preparo (produto fresco)</label>
+              <input type="url" name="tutorial_url" placeholder="https://..."
+                     class="field text-xs font-mono" />
+            </div>
+            <div>
+              <label class="text-xs text-slate-500">
+                Promoção / desconto
+                <span class="text-yellow-400">(ativado nos últimos 3 dias antes da validade)</span>
+              </label>
+              <input type="url" name="promo_url" placeholder="https://..."
+                     class="field text-xs font-mono" />
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-purple">Registrar Lote</button>
+        </form>
+      </section>
+
+      <!-- Batch list — table on sm+, cards on mobile -->
+      <section class="bg-slate-800 rounded-xl p-4 border border-slate-700">
+        <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-2">
+          Lotes Recentes
+        </h2>
+        <div class="overflow-x-auto">
+          <table class="batch-table w-full text-sm">
+            <thead>
+              <tr class="text-xs text-slate-500 border-b border-slate-700">
+                <th class="text-left py-1.5 px-2">Lote</th>
+                <th class="text-left py-1.5 px-2">Produto</th>
+                <th class="text-left py-1.5 px-2">Validade</th>
+                <th class="text-left py-1.5 px-2">QR</th>
+              </tr>
+            </thead>
+            <tbody id="batch-table-body">
+              {% for b in batches %}
+              <tr id="batch-{{ b.id }}" class="border-b border-gray-700">
+                <td data-label="Lote"     class="py-1.5 px-2 text-gray-200 font-mono text-xs">{{ b.batch_number }}</td>
+                <td data-label="Produto"  class="py-1.5 px-2 text-gray-200">{{ b.product_name }}</td>
+                <td data-label="Validade" class="py-1.5 px-2 text-gray-400 text-xs">{{ b.expiry_date.strftime('%d/%m/%Y') }}</td>
+                <td data-label="QR"       class="py-1.5 px-2">
+                  <a href="/qr/{{ b.id }}" target="_blank"
+                     class="text-xs text-blue-400 hover:text-blue-300 underline">QR ↗</a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Fields legend -->
+      <section class="bg-slate-900 rounded-xl p-4 border border-slate-700 text-xs text-slate-400">
+        <p class="font-semibold text-slate-300 mb-2">Campos disponíveis no fields_config</p>
+        <table class="w-full">
+          <thead>
+            <tr class="text-slate-500">
+              <th class="text-left pb-1">field</th>
+              <th class="text-left pb-1">descrição</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="font-mono pr-4 text-green-400 py-0.5">product_name</td><td>Nome do produto</td></tr>
+            <tr><td class="font-mono pr-4 text-green-400 py-0.5">batch_number</td><td>Número do lote</td></tr>
+            <tr><td class="font-mono pr-4 text-green-400 py-0.5">production_date</td><td>Data de fabricação</td></tr>
+            <tr><td class="font-mono pr-4 text-green-400 py-0.5">expiry_date</td><td>Data de validade</td></tr>
+            <tr><td class="font-mono pr-4 text-green-400 py-0.5">weight</td><td>Peso (kg)</td></tr>
+            <tr><td class="font-mono pr-4 text-green-400 py-0.5">ingredients_summary</td><td>Ingredientes</td></tr>
+            <tr><td class="font-mono pr-4 text-yellow-400 py-0.5">qr_code</td><td>QR Code dinâmico (usa "size" em mm)</td></tr>
+          </tbody>
+        </table>
+        <p class="mt-2 text-slate-500">
+          Propriedades: <span class="font-mono">x, y, font_size_mm, bold, label, size</span>
+        </p>
+      </section>
+
+    </div>
+  </div><!-- /grid -->
+
+  <script>
+    function labelApp() {
+      return {
+        selectedTemplate: '',
+        selectedBatch: '',
+
+        previewTemplate() {
+          if (!this.selectedTemplate) return;
+          const batchParam = this.selectedBatch ? `?batch_id=${this.selectedBatch}` : '';
+          htmx.ajax('GET', `/labels/${this.selectedTemplate}/preview${batchParam}`, {
+            target: '#label-preview',
+            swap: 'innerHTML',
+          });
+        },
+
+        showCommand() {
+          if (!this.selectedTemplate) return;
+          const batchParam = this.selectedBatch ? `?batch_id=${this.selectedBatch}` : '';
+          htmx.ajax('GET', `/labels/${this.selectedTemplate}/command${batchParam}`, {
+            target: '#command-output',
+            swap: 'innerHTML',
+          });
+        },
+
+        fillDefaultFields() {
+          const defaultConfig = {{ default_fields | tojson }};
+          this.$refs.fieldsInput.value = JSON.stringify(JSON.parse(defaultConfig), null, 2);
+        },
+      };
+    }
+  </script>
+
+</body>
+</html>
