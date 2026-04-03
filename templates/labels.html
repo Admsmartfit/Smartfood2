@@ -1,399 +1,879 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SmartFood Ops 360 — Etiquetas</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-  <style>
-    [x-cloak] { display: none !important; }
-    body { background-color: #0f172a; font-family: 'Outfit', 'Inter', sans-serif; }
-    textarea.mono { font-family: 'Courier New', Courier, monospace; font-size: 11px; }
+{% extends "base.html" %}
+{% set active_page = "etiquetas" %}
 
-    /* All inputs and selects */
-    .field {
-      background: #1e293b; border: 1px solid #334155; border-radius: .5rem;
-      padding: .5rem .75rem; color: #f1f5f9; min-height: 44px; width: 100%;
+{% block title %}SmartFood Ops 360 — Editor de Etiquetas{% endblock %}
+
+{% block extra_head %}
+<style>
+  /* ── Dot-grid canvas background ──────────────────────────────── */
+  .dot-grid {
+    background-color: #141c2d;
+    background-image: radial-gradient(circle, rgba(255,255,255,.12) 1px, transparent 1px);
+    background-size: 18px 18px;
+  }
+
+  /* ── Label canvas (the white paper) ──────────────────────────── */
+  #label-canvas {
+    background: #ffffff;
+    box-shadow: 0 8px 40px rgba(0,0,0,.6);
+    position: relative;
+    overflow: visible;
+    transition: width .2s, height .2s;
+  }
+
+  /* ── Field element on canvas ──────────────────────────────────── */
+  .canvas-field {
+    position: absolute;
+    cursor: move;
+    user-select: none;
+    white-space: pre;
+    line-height: 1.1;
+    color: #000;
+    transition: outline .05s;
+  }
+  .canvas-field:hover        { outline: 1px dashed #93c5fd; outline-offset: 2px; }
+  .canvas-field.selected     { outline: 2px solid #3b82f6 !important; outline-offset: 2px; }
+
+  /* QR field placeholder */
+  .canvas-field.qr-field {
+    display: flex; align-items: center; justify-content: center;
+    border: 2px solid #000; font-size: 11px; font-weight: bold; color: #000;
+    background: repeating-conic-gradient(#000 0% 25%, #fff 0% 50%) 0 0 / 6px 6px;
+    opacity: .85;
+  }
+
+  /* ── Left panel field card ────────────────────────────────────── */
+  .field-card {
+    border-radius: .75rem;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    padding: .75rem;
+    margin-bottom: .5rem;
+    cursor: pointer;
+    transition: border-color .1s;
+  }
+  .field-card.active { border-color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6; }
+  .field-card:hover:not(.active) { border-color: #6b7280; }
+
+  /* Compact range slider */
+  input[type="range"] {
+    background: transparent;
+    min-height: 0;
+    padding: 0;
+    border: none;
+    outline: none;
+    accent-color: #3b82f6;
+  }
+
+  /* Small number input inside field card */
+  .num-sm {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: .375rem;
+    color: var(--text);
+    text-align: center;
+    font-size: .75rem;
+    padding: .2rem .3rem;
+    width: 52px;
+    min-height: 0;
+  }
+  .num-sm:focus { border-color: var(--blue); outline: none; }
+
+  /* Batch table → mobile cards */
+  @media (max-width: 639px) {
+    .batch-table thead              { display: none; }
+    .batch-table tbody tr           {
+      display: block; background: var(--card);
+      border-radius: .75rem; margin-bottom: .5rem;
+      padding: .75rem 1rem; border: 1px solid var(--border);
     }
-    .field:focus { border-color: #3b82f6; outline: 2px solid rgba(59,130,246,.25); }
-
-    /* Primary button — always >= 48px */
-    .btn {
-      display: flex; align-items: center; justify-content: center;
-      min-height: 48px; border-radius: .625rem; font-weight: 600;
-      padding: 0 1rem; transition: all .15s; cursor: pointer; width: 100%;
+    .batch-table tbody td           {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: .2rem 0; border: none; font-size: .875rem;
     }
-    .btn-blue   { background: #2563eb; color: #fff; }
-    .btn-blue:hover   { background: #3b82f6; }
-    .btn-green  { background: #059669; color: #fff; }
-    .btn-green:hover  { background: #10b981; }
-    .btn-purple { background: #7c3aed; color: #fff; }
-    .btn-purple:hover { background: #8b5cf6; }
-    .btn-slate  { background: #334155; color: #cbd5e1; }
-    .btn-slate:hover  { background: #475569; }
-
-    /* ── Batch table → mobile cards ─────────────────────────────────────
-       On screens < 640px, hide the thead and turn each <tr> into a card.
-       Each <td> shows its column name via data-label.
-    ───────────────────────────────────────────────────────────────────── */
-    @media (max-width: 639px) {
-      .batch-table thead              { display: none; }
-      .batch-table tbody tr           {
-        display: block; background: rgba(30,41,59,.9);
-        border-radius: .75rem; margin-bottom: .6rem;
-        padding: .75rem 1rem; border: 1px solid rgba(255,255,255,.07);
-      }
-      .batch-table tbody td           {
-        display: flex; justify-content: space-between; align-items: center;
-        padding: .25rem 0; border: none; font-size: .875rem;
-      }
-      .batch-table tbody td::before   {
-        content: attr(data-label); color: #64748b;
-        font-size: .7rem; font-weight: 500; text-transform: uppercase;
-        letter-spacing: .04em; margin-right: .5rem;
-      }
+    .batch-table tbody td::before   {
+      content: attr(data-label); color: #6b7280;
+      font-size: .7rem; font-weight: 500; text-transform: uppercase;
+      letter-spacing: .04em; margin-right: .5rem;
     }
-  </style>
-</head>
-<body class="text-gray-100 min-h-screen p-3 sm:p-5">
+  }
+</style>
+{% endblock %}
 
-  <!-- ── Nav ──────────────────────────────────────────────────── -->
-  <header class="flex flex-wrap items-center gap-x-5 gap-y-2 mb-5 border-b border-slate-700 pb-3">
-    <h1 class="text-base sm:text-xl font-bold text-white tracking-tight mr-2">SmartFood Ops 360</h1>
-    <nav class="flex flex-wrap gap-3 text-sm">
-      <a href="/"              class="text-gray-400 hover:text-white transition">📦 Insumos</a>
-      <a href="/ficha-tecnica" class="text-gray-400 hover:text-white transition">📋 Ficha Técnica</a>
-      <a href="/labels"        class="text-blue-400 font-semibold border-b border-blue-400 pb-0.5">🏷️ Etiquetas</a>
-      <a href="/dashboard"     class="text-gray-400 hover:text-white transition">📊 Dashboard</a>
-    </nav>
-  </header>
+{% block content %}
+<div x-data="labelMaker()" x-cloak>
 
-  <div x-data="labelApp()" class="grid grid-cols-1 lg:grid-cols-3 gap-5">
-
-    <!-- ══════════════════════════════════════════
-         COL 1 — Template management
-    ═══════════════════════════════════════════ -->
-    <div class="space-y-4">
-
-      <!-- Create Template -->
-      <section class="bg-slate-800 rounded-xl p-4 border border-slate-700">
-        <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-3">
-          Novo Template de Etiqueta
-        </h2>
-        <form hx-post="/labels"
-              hx-target="#template-select"
-              hx-swap="beforeend"
-              @htmx:after-request="$event.detail.successful && $refs.tplForm.reset()"
-              x-ref="tplForm"
-              class="space-y-2">
-
-          <input type="text" name="name" placeholder="Nome do template"
-                 class="field text-sm" required />
-
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="text-xs text-slate-400">Largura (mm)</label>
-              <input type="number" name="width_mm" value="62" step="0.5" min="10"
-                     class="field text-sm" />
-            </div>
-            <div>
-              <label class="text-xs text-slate-400">Altura (mm)</label>
-              <input type="number" name="height_mm" value="40" step="0.5" min="10"
-                     class="field text-sm" />
-            </div>
-          </div>
-
-          <div>
-            <label class="text-xs text-slate-400">Tipo de Impressora</label>
-            <select name="printer_type" class="field text-sm">
-              <option value="ZPL">ZPL — Zebra</option>
-              <option value="TSPL">TSPL — Elgin / Argox / TSC</option>
-            </select>
-          </div>
-
-          <div class="grid grid-cols-3 gap-2">
-            <div class="col-span-2">
-              <label class="text-xs text-slate-400">IP da Impressora</label>
-              <input type="text" name="printer_ip" placeholder="192.168.1.100"
-                     class="field text-sm font-mono" />
-            </div>
-            <div>
-              <label class="text-xs text-slate-400">Porta</label>
-              <input type="number" name="printer_port" value="9100"
-                     class="field text-sm" />
-            </div>
-          </div>
-
-          <div>
-            <label class="text-xs text-slate-400 flex items-center gap-2">
-              Campos (JSON)
-              <button type="button" @click="fillDefaultFields()"
-                      class="text-blue-400 hover:text-blue-300 text-xs underline font-normal">
-                Preencher padrão
-              </button>
-            </label>
-            <textarea name="fields_config" x-ref="fieldsInput" rows="8"
-                      class="mono field resize-y text-green-300 bg-slate-900"
-                      placeholder='[{"field":"product_name","x":2,"y":3,"font_size_mm":4.5,"bold":true}, ...]'
-            ></textarea>
-          </div>
-
-          <button type="submit" class="btn btn-blue text-sm">Criar Template</button>
-        </form>
-      </section>
-
-      <!-- Template selector -->
-      <section class="bg-slate-800 rounded-xl p-4 border border-slate-700">
-        <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-2">
-          Templates Salvos
-        </h2>
-        <select id="template-select" size="5"
-                class="w-full bg-slate-900 text-white rounded px-2 py-1 text-sm min-h-[80px]"
-                x-model="selectedTemplate"
-                @change="previewTemplate()">
-          <option value="">— selecione —</option>
-          {% for t in label_templates %}
-          <option value="{{ t.id }}">{{ t.name }} ({{ t.width_mm }}×{{ t.height_mm }} mm — {{ t.printer_type }})</option>
-          {% endfor %}
-        </select>
-
-        <button @click="showCommand()"
-                x-show="selectedTemplate"
-                x-cloak
-                class="btn btn-slate text-xs mt-2">
-          Ver Comando ZPL/TSPL
-        </button>
-        <div id="command-output" class="mt-2"></div>
-      </section>
-
+  <!-- Page header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+    <div>
+      <h1 class="text-2xl font-bold text-white">🏷️ Editor de Etiquetas</h1>
+      <p class="text-gray-400 text-sm mt-0.5">
+        Posicione os campos arrastando-os na etiqueta. Nenhum JSON necessário.
+      </p>
     </div>
 
-    <!-- ══════════════════════════════════════════
-         COL 2 — Label Preview
-    ═══════════════════════════════════════════ -->
-    <div class="space-y-4">
+    <!-- Template loaded indicator -->
+    <div class="flex items-center gap-2">
+      <span class="text-xs text-gray-500" x-show="!currentId">Novo template</span>
+      <span class="text-xs text-blue-400 font-medium" x-show="currentId">
+        Editando: <span x-text="tplName"></span>
+      </span>
+    </div>
+  </div>
 
-      <section class="bg-slate-800 rounded-xl p-4 border border-slate-700">
-        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
-          <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wide">
-            Preview da Etiqueta
-          </h2>
-          <select x-model="selectedBatch" @change="previewTemplate()"
-                  class="field text-xs sm:w-auto">
-            <option value="">Dados de exemplo</option>
-            {% for b in batches %}
-            <option value="{{ b.id }}">{{ b.batch_number }} — {{ b.product_name }}</option>
-            {% endfor %}
+  <!-- ══════════════════════════════════════════════════════════
+       WYSIWYG EDITOR
+  ═══════════════════════════════════════════════════════════ -->
+  <div class="flex gap-0 rounded-xl overflow-hidden border border-gray-700"
+       style="min-height:640px">
+
+    <!-- ───────────────────────────────────────
+         LEFT PANEL — settings + field list
+    ─────────────────────────────────────────── -->
+    <div class="w-72 flex-shrink-0 overflow-y-auto flex flex-col"
+         style="background:var(--surface); border-right:1px solid var(--border)">
+
+      <!-- Template settings -->
+      <div class="p-4 border-b border-gray-700 space-y-3">
+        <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Propriedades</p>
+
+        <div>
+          <label class="text-xs text-gray-500">Nome do template</label>
+          <input x-model="tplName" placeholder="Ex: Etiqueta 62×40mm" class="text-sm" />
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-xs text-gray-500">Largura (mm)</label>
+            <input type="number" x-model.number="widthMm" step="0.5" min="20" @input="clampFields()" class="text-sm" />
+          </div>
+          <div>
+            <label class="text-xs text-gray-500">Altura (mm)</label>
+            <input type="number" x-model.number="heightMm" step="0.5" min="10" @input="clampFields()" class="text-sm" />
+          </div>
+        </div>
+
+        <div>
+          <label class="text-xs text-gray-500">Tipo de Impressora</label>
+          <select x-model="printerType" class="text-sm">
+            <option value="ZPL">ZPL — Zebra</option>
+            <option value="TSPL">TSPL — Elgin / Argox / TSC</option>
           </select>
         </div>
 
-        <div id="label-preview"
-             class="flex items-center justify-center min-h-[160px] bg-gray-200 rounded-lg p-4 overflow-auto">
-          <span class="text-gray-500 text-sm">Selecione um template para visualizar</span>
-        </div>
-      </section>
-
-      <!-- Print action -->
-      <section class="bg-slate-800 rounded-xl p-4 border border-slate-700"
-               x-show="selectedTemplate" x-cloak>
-        <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-3">
-          Imprimir via TCP
-        </h2>
-        <form :action="'/labels/' + selectedTemplate + '/print'"
-              hx-post
-              hx-target="#print-result"
-              hx-swap="innerHTML"
-              class="space-y-2">
-          <div>
-            <label class="text-xs text-slate-400">Lote</label>
-            <select name="batch_id" required class="field text-sm">
-              <option value="">— selecione um lote —</option>
-              {% for b in batches %}
-              <option value="{{ b.id }}">{{ b.batch_number }} — {{ b.product_name }}</option>
-              {% endfor %}
-            </select>
+        <div class="grid grid-cols-3 gap-2">
+          <div class="col-span-2">
+            <label class="text-xs text-gray-500">IP da Impressora</label>
+            <input type="text" x-model="printerIp" placeholder="192.168.1.100" class="text-sm font-mono" />
           </div>
-          <button type="submit" class="btn btn-green">🖨️ Enviar para Impressora</button>
-        </form>
-        <div id="print-result" class="mt-2"></div>
-      </section>
+          <div>
+            <label class="text-xs text-gray-500">Porta</label>
+            <input type="number" x-model.number="printerPort" class="text-sm" />
+          </div>
+        </div>
+      </div>
 
+      <!-- Field list -->
+      <div class="p-4 flex-1 overflow-y-auto">
+        <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
+          Campos
+          <span class="text-gray-600 font-normal normal-case ml-1">(arraste na etiqueta)</span>
+        </p>
+
+        <!-- Existing field cards -->
+        <template x-for="(f, i) in fields" :key="i">
+          <div class="field-card"
+               :class="selectedIdx === i ? 'active' : ''"
+               @click="selectedIdx = i">
+
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-2">
+                <span class="text-sm" x-text="fieldIcon(f.type)"></span>
+                <span class="text-sm font-medium text-white" x-text="f.label"></span>
+              </div>
+              <button @click.stop="removeField(i)"
+                      class="icon-btn text-xs hover:text-red-400" title="Remover">✕</button>
+            </div>
+
+            <!-- Controls (compact, always visible) -->
+            <div class="space-y-2">
+              <!-- X axis -->
+              <div class="flex items-center gap-2">
+                <label class="text-xs text-gray-500 w-4">X</label>
+                <input type="range" min="0" :max="widthMm" step="0.5"
+                       x-model.number="f.x" class="flex-1 h-4" />
+                <input type="number" min="0" :max="widthMm" step="0.5"
+                       x-model.number="f.x" class="num-sm" />
+              </div>
+              <!-- Y axis -->
+              <div class="flex items-center gap-2">
+                <label class="text-xs text-gray-500 w-4">Y</label>
+                <input type="range" min="0" :max="heightMm" step="0.5"
+                       x-model.number="f.y" class="flex-1 h-4" />
+                <input type="number" min="0" :max="heightMm" step="0.5"
+                       x-model.number="f.y" class="num-sm" />
+              </div>
+
+              <!-- Font size OR QR size -->
+              <template x-if="!f.isQr">
+                <div class="flex items-center gap-2">
+                  <label class="text-xs text-gray-500 w-8 flex-shrink-0">Fonte</label>
+                  <input type="range" min="1.5" max="12" step="0.5"
+                         x-model.number="f.font_size_mm" class="flex-1 h-4" />
+                  <input type="number" min="1.5" max="12" step="0.5"
+                         x-model.number="f.font_size_mm" class="num-sm" />
+                  <span class="text-xs text-gray-600">mm</span>
+                </div>
+              </template>
+              <template x-if="f.isQr">
+                <div class="flex items-center gap-2">
+                  <label class="text-xs text-gray-500 w-8 flex-shrink-0">QR sz</label>
+                  <input type="range" min="5" max="40" step="1"
+                         x-model.number="f.size" class="flex-1 h-4" />
+                  <input type="number" min="5" max="40" step="1"
+                         x-model.number="f.size" class="num-sm" />
+                  <span class="text-xs text-gray-600">mm</span>
+                </div>
+              </template>
+
+              <!-- Bold toggle (text only) -->
+              <template x-if="!f.isQr">
+                <label class="flex items-center gap-2 cursor-pointer mt-1">
+                  <div class="relative">
+                    <input type="checkbox" x-model="f.bold" class="sr-only" />
+                    <div class="w-8 h-4 rounded-full transition"
+                         :class="f.bold ? 'bg-blue-600' : 'bg-gray-600'"></div>
+                    <div class="absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform"
+                         :class="f.bold ? 'translate-x-4' : 'translate-x-0.5'"></div>
+                  </div>
+                  <span class="text-xs text-gray-400">Negrito</span>
+                </label>
+              </template>
+            </div>
+          </div>
+        </template>
+
+        <!-- Add field dropdown -->
+        <div x-data="{open:false}" class="relative">
+          <button @click="open=!open; $nextTick(() => $refs.addMenu && $refs.addMenu.focus())"
+                  class="btn btn-secondary btn-sm btn-full mt-1"
+                  style="border-style:dashed">
+            + Adicionar Campo
+          </button>
+          <div x-show="open" x-cloak @click.outside="open=false"
+               x-ref="addMenu" tabindex="-1"
+               class="absolute left-0 right-0 mt-1 rounded-xl border border-gray-700 overflow-hidden z-20"
+               style="background:var(--card)"
+               x-transition:enter="transition ease-out duration-100"
+               x-transition:enter-start="opacity-0 scale-y-95 origin-top"
+               x-transition:enter-end="opacity-100 scale-y-100">
+            <template x-for="af in availableFields" :key="af.type">
+              <button @click="addField(af); open=false"
+                      class="w-full text-left px-3 py-2 text-sm hover:bg-gray-700/60 flex items-center gap-2 transition">
+                <span x-text="fieldIcon(af.type)"></span>
+                <span x-text="af.label"></span>
+              </button>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      <!-- Save / Update / Delete buttons -->
+      <div class="p-4 border-t border-gray-700 space-y-2">
+        <button @click="saveTemplate()" :disabled="saving"
+                class="btn btn-primary btn-full text-sm">
+          <span x-text="saving ? 'Salvando…' : (currentId ? '💾 Atualizar Template' : '💾 Salvar Novo Template')"></span>
+        </button>
+        <div x-show="currentId" x-cloak class="flex gap-2">
+          <button @click="newTemplate()" class="btn btn-secondary btn-sm flex-1">
+            + Novo (em branco)
+          </button>
+          <button @click="deleteTemplate()"
+                  class="btn btn-danger btn-sm px-3" title="Excluir template">
+            🗑️
+          </button>
+        </div>
+      </div>
+
+      <!-- Saved templates list -->
+      <div class="border-t border-gray-700">
+        <button @click="showTemplates = !showTemplates"
+                class="w-full flex items-center justify-between px-4 py-2.5 text-xs font-semibold
+                       text-gray-400 uppercase tracking-wide hover:text-white hover:bg-gray-800/40 transition">
+          <span>Templates Salvos (<span x-text="savedTemplates.length"></span>)</span>
+          <span x-text="showTemplates ? '▲' : '▼'"></span>
+        </button>
+        <div x-show="showTemplates" x-cloak class="pb-2">
+          <template x-for="t in savedTemplates" :key="t.id">
+            <button @click="loadTemplate(t)"
+                    class="w-full text-left px-4 py-2 text-xs hover:bg-gray-700/50 transition flex items-center gap-2"
+                    :class="currentId === t.id ? 'text-blue-400 bg-blue-900/20' : 'text-gray-400'">
+              <span>🏷️</span>
+              <span class="flex-1 truncate" x-text="t.name"></span>
+              <span class="text-gray-600 flex-shrink-0" x-text="t.width_mm + '×' + t.height_mm"></span>
+            </button>
+          </template>
+          <p x-show="!savedTemplates.length" class="px-4 py-2 text-xs text-gray-600 italic">
+            Nenhum template salvo ainda.
+          </p>
+        </div>
+      </div>
     </div>
 
-    <!-- ══════════════════════════════════════════
-         COL 3 — Batch management
-    ═══════════════════════════════════════════ -->
-    <div class="space-y-4">
+    <!-- ───────────────────────────────────────
+         RIGHT — CANVAS AREA
+    ─────────────────────────────────────────── -->
+    <div class="flex-1 dot-grid flex flex-col items-center justify-start overflow-auto p-8 gap-4"
+         @click.self="selectedIdx = null">
 
-      <!-- Create batch -->
-      <section class="bg-slate-800 rounded-xl p-4 border border-slate-700">
-        <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-3">
+      <!-- Toolbar: preview data selector + zoom + instructions -->
+      <div class="flex flex-wrap items-center gap-3 w-full max-w-2xl">
+        <div class="flex items-center gap-2 flex-1 min-w-0">
+          <label class="text-xs text-gray-400 flex-shrink-0">Dados:</label>
+          <select x-model.number="previewBatchIdx" class="text-xs" style="min-height:32px">
+            <option value="-1">Dados de exemplo</option>
+            <template x-for="(b, i) in batches" :key="b.id">
+              <option :value="i" x-text="b.batch_number + ' — ' + b.product_name"></option>
+            </template>
+          </select>
+        </div>
+        <div class="flex items-center gap-1">
+          <button @click="zoom = Math.max(3, zoom - 1)"
+                  class="icon-btn text-gray-400 hover:text-white text-lg leading-none">−</button>
+          <span class="text-xs text-gray-500 w-12 text-center" x-text="zoom + 'px/mm'"></span>
+          <button @click="zoom = Math.min(12, zoom + 1)"
+                  class="icon-btn text-gray-400 hover:text-white text-lg leading-none">+</button>
+        </div>
+        <span class="text-xs text-gray-600 italic hidden lg:inline">
+          Arraste os campos para reposicionar
+        </span>
+      </div>
+
+      <!-- THE LABEL CANVAS -->
+      <div id="label-canvas"
+           x-ref="canvas"
+           :style="`width:${canvasW}px; height:${canvasH}px`"
+           @click.self="selectedIdx = null">
+
+        <template x-for="(f, i) in fields" :key="i">
+          <div :class="'canvas-field' + (f.isQr ? ' qr-field' : '') + (selectedIdx === i ? ' selected' : '')"
+               :style="fieldStyle(f)"
+               @mousedown.prevent="startDrag($event, i)"
+               @click.stop="selectedIdx = i">
+            <template x-if="!f.isQr">
+              <span x-text="sampleText(f.type)"></span>
+            </template>
+            <template x-if="f.isQr">
+              <span style="font-size:9px; color:#fff; font-weight:bold; mix-blend-mode:difference">QR</span>
+            </template>
+          </div>
+        </template>
+      </div>
+
+      <!-- Canvas size hint -->
+      <p class="text-xs text-gray-600">
+        <span x-text="widthMm"></span>mm × <span x-text="heightMm"></span>mm
+        <span class="ml-2 opacity-60">(<span x-text="canvasW"></span>×<span x-text="canvasH"></span>px @ <span x-text="zoom"></span>px/mm)</span>
+      </p>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════
+       PRODUÇÃO — Lotes + Impressão
+  ═══════════════════════════════════════════════════════════ -->
+  <details class="mt-5 group" open>
+    <summary class="cursor-pointer select-none list-none flex items-center gap-2
+                    text-sm font-semibold text-gray-300 hover:text-white py-3
+                    border-b border-gray-700 transition">
+      <span class="group-open:hidden text-gray-600">▶</span>
+      <span class="hidden group-open:inline text-gray-600">▼</span>
+      Produção — Registrar Lotes e Imprimir
+    </summary>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 mt-5">
+
+      <!-- Register batch -->
+      <section class="card p-4 lg:col-span-2">
+        <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
           Registrar Lote de Produção
         </h2>
         <form hx-post="/batches"
               hx-target="#batch-table-body"
               hx-swap="afterbegin"
-              @htmx:after-request="$event.detail.successful && $refs.batchForm.reset()"
+              @htmx:after-request="if($event.detail.successful){ $refs.batchForm.reset(); generateBatchNumber(); calcExpiry(); toast('Lote registrado'); }"
               x-ref="batchForm"
-              class="space-y-2">
+              class="grid grid-cols-2 sm:grid-cols-3 gap-3">
 
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="text-xs text-slate-400">Nº do Lote</label>
-              <input type="text" name="batch_number" placeholder="L-2024-001"
-                     class="field text-sm" required />
-            </div>
-            <div>
-              <label class="text-xs text-slate-400">Produto</label>
-              <input type="text" name="product_name" placeholder="Frango Grelhado"
-                     class="field text-sm" required />
-            </div>
+          <!-- Lote gerado automaticamente -->
+          <div>
+            <label class="text-xs text-gray-400 flex items-center justify-between">
+              Nº do Lote
+              <button type="button" @click="generateBatchNumber()"
+                      class="text-blue-400 hover:text-blue-300 text-xs" tabindex="-1">↻ Novo</button>
+            </label>
+            <input type="text" name="batch_number" x-model="batchNumber"
+                   class="font-mono text-sm" required readonly
+                   style="background:var(--bg)" />
           </div>
 
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="text-xs text-slate-400">Validade</label>
-              <input type="date" name="expiry_date" class="field text-sm" required />
-            </div>
-            <div>
-              <label class="text-xs text-slate-400">Peso (kg)</label>
-              <input type="number" name="weight_kg" step="0.001" min="0" value="0"
-                     class="field text-sm" />
-            </div>
+          <!-- Produto puxado das receitas -->
+          <div>
+            <label class="text-xs text-gray-400">Produto (Receita)</label>
+            <select name="product_name" required class="text-sm">
+              <option value="">— selecione —</option>
+              {% for r in recipes %}
+              <option value="{{ r.name }}">{{ r.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <!-- Validade calculada -->
+          <div class="col-span-2 sm:col-span-1">
+            <label class="text-xs text-gray-400">Validade (meses)</label>
+            <input type="number" x-model.number="validadeMeses" @input="calcExpiry()"
+                   min="1" max="60" class="text-sm" />
+          </div>
+          <div class="col-span-2">
+            <label class="text-xs text-gray-400">Vencimento (calculado)</label>
+            <input type="date" name="expiry_date" x-model="expiryDate"
+                   class="text-sm" required readonly style="background:var(--bg)" />
           </div>
 
           <div>
-            <label class="text-xs text-slate-400">Ingredientes (resumo p/ etiqueta)</label>
-            <input type="text" name="ingredients_summary"
-                   placeholder="Frango, Alho, Azeite, Sal"
-                   class="field text-sm" />
+            <label class="text-xs text-gray-400">Peso (kg)</label>
+            <input type="number" name="weight_kg" step="0.001" min="0" value="0" />
           </div>
-
-          <div>
-            <label class="text-xs text-slate-400">Template de Etiqueta</label>
-            <select name="label_template_id" class="field text-sm">
+          <div class="col-span-2 sm:col-span-1">
+            <label class="text-xs text-gray-400">Template</label>
+            <select name="label_template_id" class="text-sm">
               <option value="">— nenhum —</option>
               {% for t in label_templates %}
               <option value="{{ t.id }}">{{ t.name }}</option>
               {% endfor %}
             </select>
           </div>
+          <div class="col-span-2 sm:col-span-3">
+            <label class="text-xs text-gray-400">Ingredientes (resumo p/ etiqueta)</label>
+            <input type="text" name="ingredients_summary" placeholder="Frango, Alho, Azeite, Sal" />
+          </div>
 
-          <!-- QR Code URLs -->
-          <div class="bg-slate-900 rounded-lg p-3 space-y-2 border border-slate-700">
-            <p class="text-xs text-slate-400 font-medium">🔗 URLs do QR Code Dinâmico</p>
-            <div>
-              <label class="text-xs text-slate-500">Tutorial de preparo (produto fresco)</label>
-              <input type="url" name="tutorial_url" placeholder="https://..."
-                     class="field text-xs font-mono" />
-            </div>
-            <div>
-              <label class="text-xs text-slate-500">
-                Promoção / desconto
-                <span class="text-yellow-400">(ativado nos últimos 3 dias antes da validade)</span>
-              </label>
-              <input type="url" name="promo_url" placeholder="https://..."
-                     class="field text-xs font-mono" />
+          <!-- QR URLs -->
+          <div class="col-span-2 sm:col-span-3 rounded-lg p-3 border border-gray-700 space-y-2"
+               style="background:var(--bg)">
+            <p class="text-xs text-gray-400 font-medium">🔗 URLs QR Code Dinâmico</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label class="text-xs text-gray-500">Tutorial (produto fresco)</label>
+                <input type="url" name="tutorial_url" placeholder="https://..." class="font-mono text-xs" />
+              </div>
+              <div>
+                <label class="text-xs text-gray-500">
+                  Promoção <span class="text-yellow-400">(últimos 3 dias)</span>
+                </label>
+                <input type="url" name="promo_url" placeholder="https://..." class="font-mono text-xs" />
+              </div>
             </div>
           </div>
 
-          <button type="submit" class="btn btn-purple">Registrar Lote</button>
+          <div class="col-span-2 sm:col-span-3">
+            <button type="submit" class="btn btn-primary text-sm">Registrar Lote</button>
+          </div>
         </form>
       </section>
 
-      <!-- Batch list — table on sm+, cards on mobile -->
-      <section class="bg-slate-800 rounded-xl p-4 border border-slate-700">
-        <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-2">
-          Lotes Recentes
-        </h2>
-        <div class="overflow-x-auto">
-          <table class="batch-table w-full text-sm">
-            <thead>
-              <tr class="text-xs text-slate-500 border-b border-slate-700">
-                <th class="text-left py-1.5 px-2">Lote</th>
-                <th class="text-left py-1.5 px-2">Produto</th>
-                <th class="text-left py-1.5 px-2">Validade</th>
-                <th class="text-left py-1.5 px-2">QR</th>
-              </tr>
-            </thead>
-            <tbody id="batch-table-body">
-              {% for b in batches %}
-              <tr id="batch-{{ b.id }}" class="border-b border-gray-700">
-                <td data-label="Lote"     class="py-1.5 px-2 text-gray-200 font-mono text-xs">{{ b.batch_number }}</td>
-                <td data-label="Produto"  class="py-1.5 px-2 text-gray-200">{{ b.product_name }}</td>
-                <td data-label="Validade" class="py-1.5 px-2 text-gray-400 text-xs">{{ b.expiry_date.strftime('%d/%m/%Y') }}</td>
-                <td data-label="QR"       class="py-1.5 px-2">
-                  <a href="/qr/{{ b.id }}" target="_blank"
-                     class="text-xs text-blue-400 hover:text-blue-300 underline">QR ↗</a>
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      <!-- Print + batch list -->
+      <div class="space-y-4">
 
-      <!-- Fields legend -->
-      <section class="bg-slate-900 rounded-xl p-4 border border-slate-700 text-xs text-slate-400">
-        <p class="font-semibold text-slate-300 mb-2">Campos disponíveis no fields_config</p>
-        <table class="w-full">
-          <thead>
-            <tr class="text-slate-500">
-              <th class="text-left pb-1">field</th>
-              <th class="text-left pb-1">descrição</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr><td class="font-mono pr-4 text-green-400 py-0.5">product_name</td><td>Nome do produto</td></tr>
-            <tr><td class="font-mono pr-4 text-green-400 py-0.5">batch_number</td><td>Número do lote</td></tr>
-            <tr><td class="font-mono pr-4 text-green-400 py-0.5">production_date</td><td>Data de fabricação</td></tr>
-            <tr><td class="font-mono pr-4 text-green-400 py-0.5">expiry_date</td><td>Data de validade</td></tr>
-            <tr><td class="font-mono pr-4 text-green-400 py-0.5">weight</td><td>Peso (kg)</td></tr>
-            <tr><td class="font-mono pr-4 text-green-400 py-0.5">ingredients_summary</td><td>Ingredientes</td></tr>
-            <tr><td class="font-mono pr-4 text-yellow-400 py-0.5">qr_code</td><td>QR Code dinâmico (usa "size" em mm)</td></tr>
-          </tbody>
-        </table>
-        <p class="mt-2 text-slate-500">
-          Propriedades: <span class="font-mono">x, y, font_size_mm, bold, label, size</span>
-        </p>
-      </section>
+        <!-- Print section -->
+        <section class="card p-4">
+          <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
+            🖨️ Imprimir via TCP
+          </h2>
+          <form hx-post
+                :action="'/labels/' + (currentId || 0) + '/print'"
+                hx-target="#print-result"
+                hx-swap="innerHTML"
+                @htmx:after-request="$event.detail.successful && toast('Enviado para impressora')"
+                class="space-y-2">
+            <div>
+              <label class="text-xs text-gray-400">Template</label>
+              <select name="template_select" class="text-sm"
+                      @change="loadTemplateById(parseInt($event.target.value))">
+                <option value="0">— selecione —</option>
+                <template x-for="t in savedTemplates" :key="t.id">
+                  <option :value="t.id" :selected="currentId === t.id" x-text="t.name"></option>
+                </template>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs text-gray-400">Lote</label>
+              <select name="batch_id" required class="text-sm">
+                <option value="">— selecione —</option>
+                {% for b in batches %}
+                <option value="{{ b.id }}">{{ b.batch_number }} — {{ b.product_name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <button type="submit"
+                    :disabled="!currentId"
+                    class="btn btn-primary btn-full text-sm"
+                    :title="!currentId ? 'Selecione um template primeiro' : ''">
+              Enviar para Impressora
+            </button>
+          </form>
+          <div id="print-result" class="mt-2"></div>
 
+          <!-- ZPL/TSPL command viewer -->
+          <details class="mt-3 group/cmd" x-show="currentId">
+            <summary class="cursor-pointer text-xs text-gray-500 hover:text-gray-300 select-none list-none">
+              ▶ Ver comando ZPL/TSPL
+            </summary>
+            <div id="command-output" class="mt-2"></div>
+            <button @click="showCommand()" class="btn btn-secondary btn-sm mt-1 text-xs">
+              Gerar Comando
+            </button>
+          </details>
+        </section>
+
+        <!-- Batch list -->
+        <section class="card p-4">
+          <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+            Lotes Recentes
+          </h2>
+          <div class="overflow-x-auto">
+            <table class="batch-table w-full text-sm">
+              <thead>
+                <tr class="text-xs text-gray-500 border-b border-gray-700">
+                  <th class="text-left py-1.5 px-1">Lote</th>
+                  <th class="text-left py-1.5 px-1">Produto</th>
+                  <th class="text-left py-1.5 px-1">Validade</th>
+                  <th class="py-1.5 px-1">QR</th>
+                </tr>
+              </thead>
+              <tbody id="batch-table-body">
+                {% for b in batches %}
+                <tr id="batch-{{ b.id }}" class="border-b border-gray-800">
+                  <td data-label="Lote"    class="py-1.5 px-1 text-gray-200 font-mono text-xs">{{ b.batch_number }}</td>
+                  <td data-label="Produto" class="py-1.5 px-1 text-gray-200 text-xs">{{ b.product_name }}</td>
+                  <td data-label="Val."    class="py-1.5 px-1 text-gray-400 text-xs">{{ b.expiry_date.strftime('%d/%m/%Y') }}</td>
+                  <td data-label="QR"      class="py-1.5 px-1 text-center">
+                    <a href="/qr/{{ b.id }}" target="_blank"
+                       class="text-xs text-blue-400 hover:text-blue-300">↗</a>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+      </div>
     </div>
-  </div><!-- /grid -->
+  </details>
 
-  <script>
-    function labelApp() {
-      return {
-        selectedTemplate: '',
-        selectedBatch: '',
+</div>
+{% endblock %}
 
-        previewTemplate() {
-          if (!this.selectedTemplate) return;
-          const batchParam = this.selectedBatch ? `?batch_id=${this.selectedBatch}` : '';
-          htmx.ajax('GET', `/labels/${this.selectedTemplate}/preview${batchParam}`, {
-            target: '#label-preview',
-            swap: 'innerHTML',
-          });
-        },
+{% block scripts %}
+<script>
+// ── Sample data shown in canvas preview ────────────────────────────────────
+const SAMPLE = {
+  product_name:        'Frango Grelhado',
+  batch_number:        'L-2024-001',
+  production_date:     '01/04/2024',
+  expiry_date:         '08/04/2024',
+  weight:              '1.250 kg',
+  ingredients_summary: 'Frango, Alho, Azeite, Sal',
+};
 
-        showCommand() {
-          if (!this.selectedTemplate) return;
-          const batchParam = this.selectedBatch ? `?batch_id=${this.selectedBatch}` : '';
-          htmx.ajax('GET', `/labels/${this.selectedTemplate}/command${batchParam}`, {
-            target: '#command-output',
-            swap: 'innerHTML',
-          });
-        },
+const FIELD_ICONS = {
+  product_name: '📦', batch_number: '🔢', production_date: '📅',
+  expiry_date: '⏳', weight: '⚖️', ingredients_summary: '🥗', qr_code: '▣',
+};
 
-        fillDefaultFields() {
-          const defaultConfig = {{ default_fields | tojson }};
-          this.$refs.fieldsInput.value = JSON.stringify(JSON.parse(defaultConfig), null, 2);
-        },
+// Available field types the user can add
+const AVAILABLE_FIELDS = [
+  { type: 'product_name',        label: 'Nome do Produto',      isQr: false, font_size_mm: 4.5, bold: true  },
+  { type: 'batch_number',        label: 'Número do Lote',       isQr: false, font_size_mm: 3,   bold: false },
+  { type: 'production_date',     label: 'Data de Fabricação',   isQr: false, font_size_mm: 3,   bold: false },
+  { type: 'expiry_date',         label: 'Data de Validade',     isQr: false, font_size_mm: 3,   bold: true  },
+  { type: 'weight',              label: 'Peso',                 isQr: false, font_size_mm: 3,   bold: false },
+  { type: 'ingredients_summary', label: 'Lista de Ingredientes',isQr: false, font_size_mm: 2.5, bold: false },
+  { type: 'qr_code',             label: 'QR Code Dinâmico',     isQr: true,  size: 15                       },
+];
+
+function labelMaker() {
+  return {
+    // ── Template state ───────────────────────────────────────────
+    currentId:   null,
+    tplName:     '',
+    widthMm:     62,
+    heightMm:    40,
+    printerType: 'ZPL',
+    printerIp:   '',
+    printerPort: 9100,
+    fields:      [],
+
+    // ── UI state ─────────────────────────────────────────────────
+    selectedIdx:      null,
+    saving:           false,
+    zoom:             7,        // px per mm
+    previewBatchIdx:  -1,
+    showTemplates:    true,
+    savedTemplates:   {{ templates_json | tojson }},
+    batches:          {{ batches_json | tojson }},
+    availableFields:  AVAILABLE_FIELDS,
+
+    // ── Batch form state ─────────────────────────────────────────
+    batchNumber:   '',
+    validadeMeses: 3,
+    expiryDate:    '',
+
+    // ── Computed dimensions ──────────────────────────────────────
+    get canvasW() { return Math.round(this.widthMm  * this.zoom); },
+    get canvasH() { return Math.round(this.heightMm * this.zoom); },
+
+    // ── Init ─────────────────────────────────────────────────────
+    init() {
+      this.generateBatchNumber();
+      this.calcExpiry();
+      // Load most-recently saved template on page load (if any)
+      if (this.savedTemplates.length) {
+        this.loadTemplate(this.savedTemplates[0]);
+      }
+    },
+
+    // ── Batch helpers ─────────────────────────────────────────────
+    generateBatchNumber() {
+      const d = new Date();
+      const yyyy = d.getFullYear();
+      const mm   = String(d.getMonth() + 1).padStart(2, '0');
+      const dd   = String(d.getDate()).padStart(2, '0');
+      const rnd  = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+      this.batchNumber = `L-${yyyy}${mm}${dd}-${rnd}`;
+    },
+
+    calcExpiry() {
+      const d = new Date();
+      d.setMonth(d.getMonth() + parseInt(this.validadeMeses) || 3);
+      this.expiryDate = d.toISOString().split('T')[0];
+    },
+
+    // ── Field helpers ────────────────────────────────────────────
+    fieldIcon(type) { return FIELD_ICONS[type] || '?'; },
+
+    sampleText(type) {
+      const batch = this.previewBatchIdx >= 0 ? this.batches[this.previewBatchIdx] : null;
+      const map = batch ? {
+        product_name:        batch.product_name,
+        batch_number:        batch.batch_number,
+        production_date:     batch.production_date,
+        expiry_date:         batch.expiry_date,
+        weight:              batch.weight_kg + ' kg',
+        ingredients_summary: batch.ingredients_summary,
+      } : SAMPLE;
+      return map[type] || type;
+    },
+
+    fieldStyle(f) {
+      const s = this.zoom;
+      if (f.isQr) {
+        const sz = Math.round((f.size || 15) * s);
+        return `left:${Math.round(f.x * s)}px; top:${Math.round(f.y * s)}px; width:${sz}px; height:${sz}px;`;
+      }
+      const fontSize = (f.font_size_mm || 3) * s * 0.8;   // 0.8 ≈ CSS px / mm at screen resolution
+      return `left:${Math.round(f.x * s)}px; top:${Math.round(f.y * s)}px; `
+           + `font-size:${fontSize.toFixed(1)}px; `
+           + `font-weight:${f.bold ? 'bold' : 'normal'};`;
+    },
+
+    // ── Add / remove fields ──────────────────────────────────────
+    addField(af) {
+      // Place new field offset from origin so it's visible
+      const offset = this.fields.length * 3;
+      const base = { x: 2 + offset, y: 2 + offset, bold: af.bold || false, label: af.label };
+      if (af.isQr) {
+        this.fields.push({ ...base, type: af.type, isQr: true, size: af.size || 15 });
+      } else {
+        this.fields.push({ ...base, type: af.type, isQr: false, font_size_mm: af.font_size_mm || 3 });
+      }
+      this.selectedIdx = this.fields.length - 1;
+    },
+
+    removeField(i) {
+      this.fields.splice(i, 1);
+      if (this.selectedIdx >= this.fields.length) this.selectedIdx = null;
+    },
+
+    // Clamp field positions when canvas dimensions change
+    clampFields() {
+      for (const f of this.fields) {
+        f.x = Math.max(0, Math.min(f.x, this.widthMm  - 1));
+        f.y = Math.max(0, Math.min(f.y, this.heightMm - 1));
+      }
+    },
+
+    // ── Drag and drop ────────────────────────────────────────────
+    startDrag(e, index) {
+      this.selectedIdx = index;
+      const field = this.fields[index];
+      const canvas = this.$refs.canvas;
+      const rect   = canvas.getBoundingClientRect();
+      const s      = this.zoom;
+
+      // Where within the element the user clicked
+      const offsetX = e.clientX - rect.left - field.x * s;
+      const offsetY = e.clientY - rect.top  - field.y * s;
+
+      const onMove = (ev) => {
+        const newX = (ev.clientX - rect.left - offsetX) / s;
+        const newY = (ev.clientY - rect.top  - offsetY) / s;
+        field.x = Math.max(0, Math.min(Math.round(newX * 10) / 10, this.widthMm  - 0.5));
+        field.y = Math.max(0, Math.min(Math.round(newY * 10) / 10, this.heightMm - 0.5));
+        ev.preventDefault();
       };
-    }
-  </script>
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup',   onUp);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup',   onUp);
+      e.preventDefault();
+    },
 
-</body>
-</html>
+    // ── Keyboard nudge (arrow keys) ──────────────────────────────
+    nudge(dx, dy) {
+      if (this.selectedIdx === null) return;
+      const f = this.fields[this.selectedIdx];
+      if (!f) return;
+      f.x = Math.max(0, Math.min(Math.round((f.x + dx) * 10) / 10, this.widthMm  - 0.5));
+      f.y = Math.max(0, Math.min(Math.round((f.y + dy) * 10) / 10, this.heightMm - 0.5));
+    },
+
+    // ── Build fields_config JSON for backend ─────────────────────
+    buildConfig() {
+      return this.fields.map(f => {
+        const cfg = { field: f.type, x: f.x, y: f.y };
+        if (f.isQr) {
+          cfg.size = f.size || 15;
+        } else {
+          cfg.font_size_mm = f.font_size_mm || 3;
+          cfg.bold = f.bold;
+        }
+        return cfg;
+      });
+    },
+
+    // ── Save / Update template ────────────────────────────────────
+    async saveTemplate() {
+      if (!this.tplName.trim()) {
+        toast('Informe o nome do template', 'error'); return;
+      }
+      this.saving = true;
+      const body = new FormData();
+      body.append('name',          this.tplName);
+      body.append('width_mm',      this.widthMm);
+      body.append('height_mm',     this.heightMm);
+      body.append('printer_type',  this.printerType);
+      body.append('printer_ip',    this.printerIp);
+      body.append('printer_port',  this.printerPort);
+      body.append('fields_config', JSON.stringify(this.buildConfig()));
+
+      const method = this.currentId ? 'PUT' : 'POST';
+      const url    = this.currentId ? `/labels/${this.currentId}` : '/labels';
+
+      try {
+        const resp = await fetch(url, { method, body });
+        if (!resp.ok) throw new Error('Erro ao salvar');
+        const data = await resp.json();
+        this.currentId = data.id;
+        // Update or add to savedTemplates list
+        const idx = this.savedTemplates.findIndex(t => t.id === data.id);
+        if (idx >= 0) this.savedTemplates[idx] = data;
+        else          this.savedTemplates.unshift(data);
+        toast(this.currentId ? 'Template atualizado!' : 'Template salvo!');
+      } catch (err) {
+        toast(err.message, 'error');
+      } finally {
+        this.saving = false;
+      }
+    },
+
+    // ── Load a saved template into the editor ────────────────────
+    loadTemplate(t) {
+      this.currentId   = t.id;
+      this.tplName     = t.name;
+      this.widthMm     = t.width_mm;
+      this.heightMm    = t.height_mm;
+      this.printerType = t.printer_type;
+      this.printerIp   = t.printer_ip || '';
+      this.printerPort = t.printer_port;
+      // Parse fields_config JSON
+      try {
+        const cfg = JSON.parse(t.fields_config || '[]');
+        this.fields = cfg.map(c => {
+          const af = AVAILABLE_FIELDS.find(a => a.type === c.field) || {};
+          return c.field === 'qr_code'
+            ? { type: c.field, label: af.label || c.field, isQr: true,
+                x: c.x || 0, y: c.y || 0, size: c.size || 15 }
+            : { type: c.field, label: af.label || c.field, isQr: false,
+                x: c.x || 0, y: c.y || 0,
+                font_size_mm: c.font_size_mm || 3, bold: c.bold || false };
+        });
+      } catch (_) { this.fields = []; }
+      this.selectedIdx = null;
+    },
+
+    loadTemplateById(id) {
+      const t = this.savedTemplates.find(t => t.id === id);
+      if (t) this.loadTemplate(t);
+    },
+
+    // ── New blank template ───────────────────────────────────────
+    newTemplate() {
+      this.currentId = null; this.tplName = ''; this.fields = [];
+      this.widthMm = 62; this.heightMm = 40;
+      this.printerType = 'ZPL'; this.printerIp = ''; this.printerPort = 9100;
+      this.selectedIdx = null;
+    },
+
+    // ── Delete template ──────────────────────────────────────────
+    async deleteTemplate() {
+      if (!this.currentId) return;
+      if (!confirm(`Excluir template "${this.tplName}"?`)) return;
+      try {
+        const resp = await fetch(`/labels/${this.currentId}`, { method: 'DELETE' });
+        if (!resp.ok) throw new Error('Erro ao excluir');
+        this.savedTemplates = this.savedTemplates.filter(t => t.id !== this.currentId);
+        this.newTemplate();
+        toast('Template excluído', 'info');
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    },
+
+    // ── Show ZPL/TSPL command ────────────────────────────────────
+    async showCommand() {
+      if (!this.currentId) return;
+      htmx.ajax('GET', `/labels/${this.currentId}/command`, {
+        target: '#command-output', swap: 'innerHTML',
+      });
+    },
+  };
+}
+
+// Arrow key nudge for selected field
+document.addEventListener('keydown', (e) => {
+  if (!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) return;
+  if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+  const comp = document.querySelector('[x-data]').__x?.$data;
+  if (!comp || comp.selectedIdx === null) return;
+  const step = e.shiftKey ? 1 : 0.5;
+  if (e.key === 'ArrowLeft')  comp.nudge(-step, 0);
+  if (e.key === 'ArrowRight') comp.nudge( step, 0);
+  if (e.key === 'ArrowUp')    comp.nudge(0, -step);
+  if (e.key === 'ArrowDown')  comp.nudge(0,  step);
+  e.preventDefault();
+});
+</script>
+{% endblock %}

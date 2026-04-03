@@ -261,7 +261,7 @@ def generate_preview_html(template_data: dict, print_data: dict) -> str:
     return (
         f'<div style="width:{w_px}px;height:{h_px}px;background:white;'
         f'border:2px solid #111;position:relative;'
-        f'font-family:\'Courier New\',Courier,monospace;overflow:hidden;'
+        f'font-family:\'Courier New\',Courier,monospace;overflow:visible;'
         f'box-shadow:3px 3px 8px rgba(0,0,0,.5);">'
         f'{inner}</div>'
     )

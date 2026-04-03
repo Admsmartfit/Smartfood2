@@ -9,6 +9,7 @@ class Ingredient(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True, nullable=False)
     unit = Column(String, nullable=False) # e.g., kg, L, un
+    category = Column(String, default="Outros")
 
     manufacturers = relationship("IngredientManufacturer", back_populates="ingredient")
     catalog_entries = relationship("SupplierCatalog", back_populates="ingredient")

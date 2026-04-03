@@ -1,67 +1,50 @@
-<!DOCTYPE html>
-<html lang="pt-br">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Ficha Técnica — SmartFood Ops 360</title>
-  <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <style>
-    body { font-family: 'Outfit', sans-serif; background: #0f172a; color: #f8fafc; }
-    .glass { background: rgba(30,41,59,.7); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,.1); border-radius: 1rem; }
-    input, select {
-      background: #1e293b; border: 1px solid #334155; border-radius: .5rem;
-      padding: .5rem .75rem; color: #f1f5f9; min-height: 44px; width: 100%;
-    }
-    input:focus, select:focus { border-color: #3b82f6; outline: 2px solid rgba(59,130,246,.25); }
-    select:disabled { opacity: .45; cursor: not-allowed; }
-    /* All action buttons get at least 48px tall */
-    .btn { display: flex; align-items: center; justify-content: center;
-           min-height: 48px; border-radius: .625rem; font-weight: 600;
-           transition: all .15s; cursor: pointer; padding: 0 1.25rem; }
-    [x-cloak] { display: none !important; }
-  </style>
-</head>
-<body class="min-h-screen p-4 sm:p-8" x-data="recipeEditor()">
-<div class="max-w-5xl mx-auto">
+{% extends "base.html" %}
+{% set active_page = "ficha" %}
 
-  <!-- ── Header ─────────────────────────────────────────────────── -->
-  <header class="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-    <div>
-      <h1 class="text-2xl sm:text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-500">
-        Módulo 1: Ficha Técnica
-      </h1>
-      <p class="text-slate-400 text-sm mt-0.5">Engenharia de Receitas e Custos</p>
-    </div>
-    <nav class="flex gap-4 text-sm flex-wrap">
-      <a href="/"          class="text-slate-400 hover:text-white transition">📦 Insumos</a>
-      <a href="/labels"    class="text-slate-400 hover:text-white transition">🏷️ Etiquetas</a>
-      <a href="/dashboard" class="text-slate-400 hover:text-white transition">📊 Dashboard</a>
-    </nav>
-  </header>
+{% block title %}Ficha Técnica — SmartFood Ops 360{% endblock %}
 
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 lg:gap-8">
+{% block extra_head %}
+<style>
+  .section-border { border-left: 3px solid #3b82f6; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div x-data="recipeEditor()">
+
+  <!-- Page header -->
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold text-white">📋 Ficha Técnica</h1>
+    <p class="text-gray-400 text-sm mt-0.5">Engenharia de Receitas e Custos</p>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 lg:gap-6">
 
     <!-- ══════════════════════════════════════════════════
-         LEFT — Recipe builder
+         LEFT — Recipe builder  (spans 2 cols)
     ═══════════════════════════════════════════════════ -->
-    <div class="lg:col-span-2 space-y-5">
+    <div class="lg:col-span-2 space-y-4">
 
       <!-- Basic info -->
-      <div class="glass p-5">
-        <h2 class="text-base font-semibold mb-4 border-b border-slate-700 pb-2">Informações da Receita</h2>
+      <div class="card p-5">
+        <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wide mb-4 border-b border-gray-700 pb-2">
+          Informações da Receita
+        </h2>
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div class="sm:col-span-1 flex flex-col gap-1">
-            <label class="text-xs text-slate-400">Nome da Receita</label>
-            <input type="text" x-model="recipeName" placeholder="Ex: Pastel de Belém" />
+            <label class="text-xs text-gray-400">Nome da Receita *</label>
+            <input type="text" x-model="recipeName"
+                   :class="nameError ? 'error' : ''"
+                   @input="nameError = false"
+                   placeholder="Ex: Pastel de Belém" />
+            <p x-show="nameError" x-cloak class="text-xs text-red-400">Informe o nome da receita.</p>
           </div>
           <div class="flex flex-col gap-1">
-            <label class="text-xs text-slate-400">Markup (multiplicador)</label>
+            <label class="text-xs text-gray-400">Markup (multiplicador)</label>
             <input type="number" x-model="markup" step="0.1" min="1" />
           </div>
           <div class="flex flex-col gap-1">
-            <label class="text-xs text-slate-400">Margem Mínima (%)</label>
+            <label class="text-xs text-gray-400">Margem Mínima (%)</label>
             <input type="number" x-model="margemMinima" step="1" min="0" max="100" />
           </div>
         </div>
@@ -69,29 +52,27 @@
 
       <!-- Sections -->
       <template x-for="(section, sIndex) in sections" :key="sIndex">
-        <div class="glass p-5 border-l-4 border-blue-500">
+        <div class="card p-5 section-border">
 
-          <!-- Section header -->
           <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
             <input type="text" x-model="section.name"
-                   class="font-bold text-base bg-transparent border-none focus:outline-none focus:ring-0 p-0 min-h-0"
-                   style="width:auto;flex:1"
+                   style="background:transparent; border:none; min-height:0; width:auto; flex:1"
+                   class="font-bold text-base focus:outline-none focus:ring-0 p-0"
                    placeholder="Nome da Seção (ex: Massa)" />
             <div class="flex items-center gap-2 flex-shrink-0">
-              <label class="text-xs text-slate-400 whitespace-nowrap">Rendimento pós-cocção (kg)</label>
+              <label class="text-xs text-gray-400 whitespace-nowrap">Rendimento pós-cocção (kg)</label>
               <input type="number" x-model="section.yield" step="0.01" class="w-24 text-right" />
             </div>
           </div>
 
-          <!-- ── MOBILE: card-per-item (hidden sm+) ──────────────────── -->
+          <!-- MOBILE: card-per-item -->
           <div class="sm:hidden space-y-3">
             <template x-for="(item, iIndex) in section.items" :key="'m-'+sIndex+'-'+iIndex">
-              <div class="bg-slate-900/80 rounded-xl p-3 space-y-2">
-
+              <div class="rounded-xl p-3 space-y-2" style="background:var(--bg)">
                 <div class="flex gap-2 items-end">
                   <div class="flex-1 flex flex-col gap-1">
-                    <label class="text-xs text-slate-500">Insumo</label>
-                    <select x-model="item.ingredientId" @change="updateItemIngredient(item)">
+                    <label class="text-xs text-gray-500">Insumo</label>
+                    <select x-model="item.ingredientId" @change="updateItemIngredient(item)" class="ts-ingredient text-sm">
                       <option value="">Selecione...</option>
                       <template x-for="ing in ingredients" :key="ing.id">
                         <option :value="ing.id" x-text="ing.name"></option>
@@ -99,20 +80,17 @@
                     </select>
                   </div>
                   <button @click="removeItem(sIndex, iIndex)"
-                          class="w-11 h-11 flex items-center justify-center flex-shrink-0 bg-slate-800 hover:bg-red-900/40 text-red-400 rounded-lg">
-                    ✕
-                  </button>
+                          class="w-11 h-11 flex items-center justify-center flex-shrink-0 hover:bg-red-900/40 text-red-400 rounded-lg"
+                          style="background:var(--card)">✕</button>
                 </div>
 
                 <div class="flex flex-col gap-1">
-                  <label class="text-xs text-slate-500">
+                  <label class="text-xs text-gray-500">
                     Marca
-                    <span x-show="item.manufacturerId" class="text-blue-400 ml-1 text-xs">
-                      — FC e preço aplicados
-                    </span>
+                    <span x-show="item.manufacturerId" class="text-blue-400 ml-1 text-xs">— FC e preço aplicados</span>
                   </label>
                   <select x-model="item.manufacturerId" @change="updateItemBrand(item)"
-                          :disabled="!item.availableBrands.length">
+                          :disabled="!item.availableBrands.length" class="text-sm">
                     <option value="">— sem marca específica —</option>
                     <template x-for="b in item.availableBrands" :key="b.id">
                       <option :value="b.id"
@@ -124,38 +102,35 @@
 
                 <div class="grid grid-cols-3 gap-2">
                   <div class="flex flex-col gap-1">
-                    <label class="text-xs text-slate-500">Qtde (kg)</label>
+                    <label class="text-xs text-gray-500">Qtde (kg)</label>
                     <input type="number" x-model="item.qty" step="0.001" />
                   </div>
                   <div class="flex flex-col gap-1">
-                    <label class="text-xs text-slate-500">FC</label>
+                    <label class="text-xs text-gray-500">FC</label>
                     <input type="number" x-model="item.fc" step="0.01" />
                   </div>
                   <div class="flex flex-col gap-1">
-                    <label class="text-xs text-slate-500">FCoc</label>
+                    <label class="text-xs text-gray-500">FCoc</label>
                     <input type="number" x-model="item.fcoc" step="0.01" />
                   </div>
                 </div>
 
-                <div class="flex justify-between items-center pt-2 border-t border-slate-800">
-                  <span class="text-xs text-slate-500">Custo do item</span>
-                  <span class="font-semibold text-sm text-slate-200"
-                        x-text="'R$ ' + calcItem(item).toFixed(4)"></span>
+                <div class="flex justify-between items-center pt-2 border-t border-gray-800">
+                  <span class="text-xs text-gray-500">Custo do item</span>
+                  <span class="font-semibold text-sm" x-text="'R$ ' + calcItem(item).toFixed(4)"></span>
                 </div>
               </div>
             </template>
           </div>
-          <!-- /mobile cards -->
 
-          <!-- ── DESKTOP: table (hidden below sm) ──────────────────── -->
+          <!-- DESKTOP: table -->
           <div class="hidden sm:block overflow-x-auto">
             <table class="w-full text-sm text-left">
-              <thead class="text-xs text-slate-500">
+              <thead class="text-xs text-gray-500">
                 <tr>
                   <th class="pb-2 pr-2 font-medium">Insumo</th>
                   <th class="pb-2 pr-2 font-medium">
-                    Marca
-                    <span class="text-slate-600 font-normal">(auto FC + preço)</span>
+                    Marca <span class="text-gray-600 font-normal">(auto FC + preço)</span>
                   </th>
                   <th class="pb-2 pr-2 font-medium">Qtde (kg)</th>
                   <th class="pb-2 pr-2 font-medium">FC</th>
@@ -166,7 +141,7 @@
               </thead>
               <tbody>
                 <template x-for="(item, iIndex) in section.items" :key="'d-'+sIndex+'-'+iIndex">
-                  <tr class="border-t border-slate-800">
+                  <tr class="border-t border-gray-800">
                     <td class="py-2 pr-2">
                       <select x-model="item.ingredientId" @change="updateItemIngredient(item)" class="text-sm">
                         <option value="">Selecione...</option>
@@ -182,15 +157,14 @@
                         <option value="">— sem marca —</option>
                         <template x-for="b in item.availableBrands" :key="b.id">
                           <option :value="b.id"
-                                  x-text="b.brand_name + ' (FC' + b.suggested_fc + ')'">
-                          </option>
+                                  x-text="b.brand_name + ' (FC' + b.suggested_fc + ')'"></option>
                         </template>
                       </select>
                     </td>
                     <td class="py-2 pr-2"><input type="number" x-model="item.qty"  step="0.001" class="w-20" /></td>
                     <td class="py-2 pr-2"><input type="number" x-model="item.fc"   step="0.01"  class="w-16" /></td>
                     <td class="py-2 pr-2"><input type="number" x-model="item.fcoc" step="0.01"  class="w-16" /></td>
-                    <td class="py-2 text-right text-slate-300 whitespace-nowrap"
+                    <td class="py-2 text-right text-gray-300 whitespace-nowrap"
                         x-text="'R$ ' + calcItem(item).toFixed(4)"></td>
                     <td class="py-2 pl-1">
                       <button @click="removeItem(sIndex, iIndex)"
@@ -201,85 +175,87 @@
               </tbody>
             </table>
           </div>
-          <!-- /desktop table -->
 
           <button @click="addItem(sIndex)"
-                  class="btn mt-4 w-full sm:w-auto bg-slate-800 hover:bg-slate-700 text-blue-400 text-sm">
+                  class="btn btn-secondary btn-sm mt-4">
             + Adicionar Insumo
           </button>
 
-          <!-- ── Forma de fazer ──────────────────────────────────── -->
-          <div class="mt-5 pt-4 border-t border-slate-700/60">
-            <label class="flex items-center gap-2 text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">
+          <!-- Forma de fazer -->
+          <div class="mt-5 pt-4 border-t border-gray-700/60">
+            <label class="flex items-center gap-2 text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
               <span class="text-base">📋</span> Forma de Fazer
             </label>
             <textarea x-model="section.instrucoes" rows="4"
                       placeholder="Descreva o modo de preparo desta seção: temperatura, tempo, técnica, pontos de atenção…"
-                      class="w-full bg-slate-900/70 border border-slate-700 rounded-lg px-3 py-2.5
-                             text-sm text-slate-200 placeholder-slate-600
-                             focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/40
-                             resize-y leading-relaxed"
+                      style="background:var(--bg)"
+                      class="w-full border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200
+                             placeholder-gray-600 focus:outline-none focus:border-blue-500
+                             focus:ring-1 focus:ring-blue-500/40 resize-y leading-relaxed"
             ></textarea>
           </div>
         </div>
       </template>
 
       <button @click="addSection()"
-              class="btn w-full border-2 border-dashed border-slate-700 text-slate-500 hover:text-slate-300 hover:border-slate-500 bg-transparent">
+              class="btn btn-secondary btn-full"
+              style="border-style:dashed">
         + Adicionar Nova Seção (Massa, Recheio, Cobertura…)
       </button>
 
-      <!-- ── Observações gerais ──────────────────────────────────── -->
-      <div class="glass p-5">
-        <label class="flex items-center gap-2 text-base font-semibold mb-3 border-b border-slate-700 pb-2">
+      <!-- Observações gerais -->
+      <div class="card p-5">
+        <label class="flex items-center gap-2 text-sm font-semibold mb-3 border-b border-gray-700 pb-2">
           <span>🗒️</span> Observações Gerais
         </label>
         <textarea x-model="observacoes" rows="5"
                   placeholder="Equipamentos utilizados, configurações de forno/fritadeira, dicas de conservação, rendimento esperado, validade, embalagem recomendada…"
-                  class="w-full bg-slate-900/70 border border-slate-700 rounded-lg px-3 py-2.5
-                         text-sm text-slate-200 placeholder-slate-600
-                         focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/40
-                         resize-y leading-relaxed"
+                  style="background:var(--bg)"
+                  class="w-full border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200
+                         placeholder-gray-600 focus:outline-none focus:border-blue-500
+                         focus:ring-1 focus:ring-blue-500/40 resize-y leading-relaxed"
         ></textarea>
-        <p class="text-xs text-slate-600 mt-1.5">
-          Este campo é salvo junto com a ficha e aparece na impressão.
-        </p>
+        <p class="text-xs text-gray-600 mt-1.5">Este campo é salvo junto com a ficha e aparece na impressão.</p>
       </div>
     </div>
 
     <!-- ══════════════════════════════════════════════════
-         RIGHT — Sidebar
+         RIGHT — Sticky sidebar
     ═══════════════════════════════════════════════════ -->
-    <div class="space-y-5">
+    <div class="space-y-4 lg:sticky lg:top-20 lg:self-start">
 
       <!-- Operational costs -->
-      <div class="glass p-5">
-        <h2 class="text-base font-semibold mb-4 border-b border-slate-700 pb-2">Custos Operacionais</h2>
+      <div class="card p-5">
+        <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wide mb-4 border-b border-gray-700 pb-2">
+          Custos Operacionais
+        </h2>
         <div class="space-y-3">
           <div class="flex justify-between items-center gap-3">
-            <label class="text-sm text-slate-400 flex-1">Mão de Obra (R$)</label>
+            <label class="text-sm text-gray-400 flex-1">Mão de Obra (R$)</label>
             <input type="number" x-model="laborCost" step="0.01" class="w-28 text-right" />
           </div>
           <div class="flex justify-between items-center gap-3">
-            <label class="text-sm text-slate-400 flex-1">Energia / Gás (R$)</label>
+            <label class="text-sm text-gray-400 flex-1">Energia / Gás (R$)</label>
             <input type="number" x-model="energyCost" step="0.01" class="w-28 text-right" />
           </div>
         </div>
       </div>
 
       <!-- Financial summary -->
-      <div class="glass p-5 bg-gradient-to-br from-indigo-900/40 to-slate-800/40">
-        <h2 class="text-base font-semibold mb-5 border-b border-white/10 pb-2">Resumo Financeiro</h2>
+      <div class="card p-5">
+        <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wide mb-4 border-b border-gray-700 pb-2">
+          Resumo Financeiro
+        </h2>
         <div class="space-y-3">
           <div class="flex justify-between text-sm">
-            <span class="text-slate-400">Custo Insumos</span>
+            <span class="text-gray-400">Custo Insumos</span>
             <span x-text="'R$ ' + totalIngCost().toFixed(2)"></span>
           </div>
           <div class="flex justify-between text-sm">
-            <span class="text-slate-400">Custo Total</span>
+            <span class="text-gray-400">Custo Total</span>
             <span x-text="'R$ ' + totalCost().toFixed(2)"></span>
           </div>
-          <div class="flex justify-between text-lg font-bold text-white border-t border-white/10 pt-3">
+          <div class="flex justify-between text-lg font-bold text-white border-t border-gray-700 pt-3">
             <span>Preço Sugerido</span>
             <span class="text-blue-400" x-text="'R$ ' + suggestedPrice().toFixed(2)"></span>
           </div>
@@ -292,7 +268,7 @@
                  'bg-red-500/10':    profitMargin() < margemMinima * 0.8
                }">
             <div class="flex justify-between items-baseline">
-              <span class="text-sm text-slate-400">Margem de Lucro</span>
+              <span class="text-sm text-gray-400">Margem de Lucro</span>
               <span class="text-2xl font-bold"
                     :class="{
                       'text-green-400':  profitMargin() >= margemMinima,
@@ -301,36 +277,39 @@
                     }"
                     x-text="profitMargin().toFixed(1) + '%'"></span>
             </div>
-            <p class="text-xs text-slate-500 mt-1"
+            <p class="text-xs text-gray-500 mt-1"
                x-text="profitMargin() >= margemMinima
-                 ? '✅ Acima do limite mínimo (' + margemMinima + '%)'
-                 : '⚠️ Abaixo do limite de ' + margemMinima + '%'">
+                 ? 'Acima do limite mínimo (' + margemMinima + '%)'
+                 : 'Abaixo do limite de ' + margemMinima + '%'">
             </p>
           </div>
         </div>
       </div>
 
-      <!-- Save feedback -->
+      <!-- Save button + status -->
       <div x-show="saveStatus" x-cloak
-           class="p-3 rounded-lg text-sm text-center"
-           :class="saveOk ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'"
+           class="p-3 rounded-lg text-sm text-center card"
+           :class="saveOk ? 'border-green-800/40 text-green-300' : 'border-red-800/40 text-red-300'"
            x-text="saveStatus">
       </div>
 
       <button @click="saveRecipe()" :disabled="saving"
-              class="btn w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white shadow-lg shadow-blue-500/20">
+              class="btn btn-primary btn-full">
         <span x-text="saving ? 'Salvando…' : '💾 Salvar Ficha Técnica'"></span>
       </button>
     </div>
 
-  </div><!-- /grid -->
-</div><!-- /container -->
+  </div>
+</div>
+{% endblock %}
 
+{% block scripts %}
 <script>
 function recipeEditor() {
   return {
     ingredients: {{ ingredients_json | tojson }},
     recipeName: '',
+    nameError: false,
     markup: 2.5,
     margemMinima: 20,
     laborCost: 0,
@@ -347,13 +326,8 @@ function recipeEditor() {
 
     addItem(sIndex) {
       this.sections[sIndex].items.push({
-        ingredientId: '',
-        manufacturerId: '',
-        availableBrands: [],   // populated on ingredient select
-        price: 0,
-        qty: 0,
-        fc: 1.0,
-        fcoc: 1.0,
+        ingredientId: '', manufacturerId: '', availableBrands: [],
+        price: 0, qty: 0, fc: 1.0, fcoc: 1.0,
       });
     },
 
@@ -361,12 +335,6 @@ function recipeEditor() {
       this.sections[sIndex].items.splice(iIndex, 1);
     },
 
-    /**
-     * Triggered when ingredient changes.
-     * 1. Sets generic price from ingredients_json (already loaded).
-     * 2. Fetches brand list from /api/ingredient-brands.
-     *    Each brand carries suggested_fc (= 100/yield%) and last_price.
-     */
     async updateItemIngredient(item) {
       const ing = this.ingredients.find(i => i.id == item.ingredientId);
       item.price = ing ? ing.price : 0;
@@ -376,14 +344,9 @@ function recipeEditor() {
       try {
         const r = await fetch(`/api/ingredient-brands?ingredient_id=${item.ingredientId}`);
         item.availableBrands = await r.json();
-      } catch (_) { /* keep generic price on network failure */ }
+      } catch (_) {}
     },
 
-    /**
-     * Triggered when brand changes.
-     * Auto-fills FC and price from the selected brand's catalog data.
-     * Formula: FC = 100 / yield_percentage  (derivado do rendimento da marca)
-     */
     updateItemBrand(item) {
       const brand = item.availableBrands.find(b => b.id == item.manufacturerId);
       if (!brand) return;
@@ -391,7 +354,6 @@ function recipeEditor() {
       if (brand.last_price > 0) item.price = brand.last_price;
     },
 
-    /** Cost formula: (price × FC / FCoc) × qty */
     calcItem(item) {
       const fcoc = parseFloat(item.fcoc) || 1;
       return ((parseFloat(item.price) * parseFloat(item.fc)) / fcoc) * parseFloat(item.qty);
@@ -404,9 +366,7 @@ function recipeEditor() {
     },
 
     totalCost() {
-      return this.totalIngCost()
-        + parseFloat(this.laborCost  || 0)
-        + parseFloat(this.energyCost || 0);
+      return this.totalIngCost() + parseFloat(this.laborCost || 0) + parseFloat(this.energyCost || 0);
     },
 
     suggestedPrice() {
@@ -421,8 +381,10 @@ function recipeEditor() {
 
     async saveRecipe() {
       if (!this.recipeName.trim()) {
+        this.nameError = true;
         this.saveOk = false;
-        this.saveStatus = '❌ Informe o nome da receita antes de salvar.';
+        this.saveStatus = 'Informe o nome da receita antes de salvar.';
+        toast('Informe o nome da receita', 'error');
         return;
       }
       this.saving = true;
@@ -432,25 +394,24 @@ function recipeEditor() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            recipeName:   this.recipeName,
-            markup:       this.markup,
-            margemMinima: this.margemMinima,
-            laborCost:    this.laborCost,
-            energyCost:   this.energyCost,
-            observacoes:  this.observacoes,
-            sections:     this.sections,
+            recipeName: this.recipeName, markup: this.markup,
+            margemMinima: this.margemMinima, laborCost: this.laborCost,
+            energyCost: this.energyCost, observacoes: this.observacoes,
+            sections: this.sections,
           }),
         });
         const data = await resp.json();
         if (resp.ok) {
           this.saveOk = true;
-          this.saveStatus = `✅ "${data.name}" salva! (ID ${data.id}) — visível no Dashboard.`;
+          this.saveStatus = `"${data.name}" salva! (ID ${data.id})`;
+          toast(`"${data.name}" salva com sucesso!`);
         } else {
           throw new Error(data.detail || 'Erro desconhecido');
         }
       } catch (err) {
         this.saveOk = false;
-        this.saveStatus = `❌ ${err.message}`;
+        this.saveStatus = err.message;
+        toast(err.message, 'error');
       } finally {
         this.saving = false;
       }
@@ -458,5 +419,4 @@ function recipeEditor() {
   };
 }
 </script>
-</body>
-</html>
+{% endblock %}

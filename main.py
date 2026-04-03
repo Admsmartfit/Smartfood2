@@ -3,6 +3,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from typing import Optional
 from datetime import datetime, timedelta
 
@@ -12,6 +13,18 @@ from database import SessionLocal, engine
 
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
+
+# ── Schema migrations (idempotent) ────────────────────────────────────────────
+_MIGRATIONS = [
+    "ALTER TABLE ingredients ADD COLUMN category TEXT DEFAULT 'Outros'",
+]
+with engine.connect() as _conn:
+    for _sql in _MIGRATIONS:
+        try:
+            _conn.execute(text(_sql))
+            _conn.commit()
+        except Exception:
+            pass  # column already exists
 
 app = FastAPI(title="SmartFood Ops 360 Foundation")
 
@@ -103,26 +116,38 @@ async def create_recipe(
 
 # ── Helper: render rows for HTMX responses ───────────────────────────────────
 
+INGREDIENT_CATEGORIES = ["Carnes", "Vegetais", "Temperos", "Laticínios", "Carboidratos", "Embalagens", "Outros"]
+
 def _ing_row(ing: models.Ingredient) -> str:
-    n = ing.name.replace("'", "&#39;")
-    u = ing.unit.replace("'", "&#39;")
+    n   = ing.name.replace("'", "&#39;")
+    u   = ing.unit.replace("'", "&#39;")
+    cat = (ing.category or "Outros").replace("'", "&#39;")
+    cat_opts = "".join(
+        f'<option value="{c}" {"selected" if c == (ing.category or "Outros") else ""}>{c}</option>'
+        for c in INGREDIENT_CATEGORIES
+    )
     return (
-        f'<div id="ing-{ing.id}" class="item-row flex items-center gap-2 p-2 rounded-lg bg-slate-800/60 border border-slate-700/50"'
-        f' x-data="{{editing:false,n:\'{n}\',u:\'{u}\'}}">'
+        f'<div id="ing-{ing.id}" class="item-row flex items-center gap-2 p-2 rounded-lg"'
+        f' style="background:var(--card);border:1px solid var(--border)"'
+        f' x-data="{{editing:false,n:\'{n}\',u:\'{u}\',cat:\'{cat}\'}}">'
         f'<div x-show="!editing" class="flex-1 flex items-center justify-between min-h-[44px]">'
-        f'  <span class="text-sm text-white"><span x-text="n"></span> <span class="text-slate-500 text-xs">(<span x-text="u"></span>)</span></span>'
+        f'  <span class="text-sm text-white">'
+        f'    <span x-text="n"></span>'
+        f'    <span class="text-gray-500 text-xs"> (<span x-text="u"></span> · <span x-text="cat"></span>)</span>'
+        f'  </span>'
         f'  <div class="flex gap-1">'
-        f'    <button @click="editing=true" class="icon-btn text-slate-400 hover:text-blue-400">✏️</button>'
+        f'    <button @click="editing=true" class="icon-btn hover:text-blue-400">✏️</button>'
         f'    <button hx-delete="/ingredients/{ing.id}" hx-target="#ing-{ing.id}" hx-swap="outerHTML"'
         f'            hx-confirm="Excluir \'{n}\'? Suas marcas e entradas de catálogo também serão removidas."'
-        f'            class="icon-btn text-slate-400 hover:text-red-400">🗑️</button>'
+        f'            class="icon-btn hover:text-red-400">🗑️</button>'
         f'  </div>'
         f'</div>'
-        f'<div x-show="editing" class="flex-1 flex flex-wrap items-center gap-2 min-h-[44px]">'
-        f'  <input x-model="n" class="field flex-1 min-w-[120px] text-sm" placeholder="Nome" />'
-        f'  <input x-model="u" class="field w-16 text-sm" placeholder="un" />'
-        f'  <button @click="saveIng({ing.id},n,u,$el)" class="icon-btn text-green-400 hover:text-green-300">💾</button>'
-        f'  <button @click="editing=false" class="icon-btn text-slate-400 hover:text-white">✕</button>'
+        f'<div x-show="editing" class="flex-1 flex flex-wrap items-center gap-1.5 min-h-[44px]">'
+        f'  <input x-model="n" class="field flex-1 min-w-[100px] text-sm" placeholder="Nome" />'
+        f'  <input x-model="u" class="field w-14 text-sm" placeholder="un" />'
+        f'  <select x-model="cat" class="field w-28 text-sm">{cat_opts}</select>'
+        f'  <button @click="saveIng({ing.id},n,u,cat,$el)" class="icon-btn text-green-400 hover:text-green-300">💾</button>'
+        f'  <button @click="editing=false" class="icon-btn hover:text-white">✕</button>'
         f'</div>'
         f'</div>'
     )
@@ -131,16 +156,17 @@ def _man_row(m: models.IngredientManufacturer) -> str:
     b = m.brand_name.replace("'", "&#39;")
     ing_name = m.ingredient.name if m.ingredient else ""
     return (
-        f'<div id="man-{m.id}" class="item-row flex items-center gap-2 p-2 rounded-lg bg-slate-800/60 border border-slate-700/50"'
+        f'<div id="man-{m.id}" class="item-row flex items-center gap-2 p-2 rounded-lg"'
+        f' style="background:var(--card);border:1px solid var(--border)"'
         f' x-data="{{editing:false,b:\'{b}\',y:{m.yield_percentage},q:{m.quality_score}}}">'
         f'<div x-show="!editing" class="flex-1 flex items-center justify-between min-h-[44px]">'
         f'  <span class="text-sm text-white"><span x-text="b"></span>'
-        f'    <span class="text-slate-500 text-xs ml-1">({ing_name} · rend. <span x-text="y"></span>%)</span></span>'
+        f'    <span class="text-gray-500 text-xs ml-1">({ing_name} · rend. <span x-text="y"></span>%)</span></span>'
         f'  <div class="flex gap-1">'
-        f'    <button @click="editing=true" class="icon-btn text-slate-400 hover:text-blue-400">✏️</button>'
+        f'    <button @click="editing=true" class="icon-btn hover:text-blue-400">✏️</button>'
         f'    <button hx-delete="/manufacturers/{m.id}" hx-target="#man-{m.id}" hx-swap="outerHTML"'
         f'            hx-confirm="Excluir marca \'{b}\'?"'
-        f'            class="icon-btn text-slate-400 hover:text-red-400">🗑️</button>'
+        f'            class="icon-btn hover:text-red-400">🗑️</button>'
         f'  </div>'
         f'</div>'
         f'<div x-show="editing" class="flex-1 flex flex-wrap items-center gap-2 min-h-[44px]">'
@@ -148,7 +174,7 @@ def _man_row(m: models.IngredientManufacturer) -> str:
         f'  <input x-model="y" type="number" step="0.1" class="field w-20 text-sm" placeholder="Rend.%" />'
         f'  <input x-model="q" type="number" min="1" max="5" class="field w-14 text-sm" placeholder="★" />'
         f'  <button @click="saveMan({m.id},b,y,q,$el)" class="icon-btn text-green-400 hover:text-green-300">💾</button>'
-        f'  <button @click="editing=false" class="icon-btn text-slate-400 hover:text-white">✕</button>'
+        f'  <button @click="editing=false" class="icon-btn hover:text-white">✕</button>'
         f'</div>'
         f'</div>'
     )
@@ -157,23 +183,24 @@ def _sup_row(s: models.Supplier) -> str:
     n = s.name.replace("'", "&#39;")
     c = (s.contact_info or "").replace("'", "&#39;")
     return (
-        f'<div id="sup-{s.id}" class="item-row flex items-center gap-2 p-2 rounded-lg bg-slate-800/60 border border-slate-700/50"'
+        f'<div id="sup-{s.id}" class="item-row flex items-center gap-2 p-2 rounded-lg"'
+        f' style="background:var(--card);border:1px solid var(--border)"'
         f' x-data="{{editing:false,n:\'{n}\',c:\'{c}\'}}">'
         f'<div x-show="!editing" class="flex-1 flex items-center justify-between min-h-[44px]">'
         f'  <span class="text-sm text-white"><span x-text="n"></span>'
-        f'    <span class="text-slate-500 text-xs ml-1" x-show="c" x-text="\'· \'+c"></span></span>'
+        f'    <span class="text-gray-500 text-xs ml-1" x-show="c" x-text="\'· \'+c"></span></span>'
         f'  <div class="flex gap-1">'
-        f'    <button @click="editing=true" class="icon-btn text-slate-400 hover:text-blue-400">✏️</button>'
+        f'    <button @click="editing=true" class="icon-btn hover:text-blue-400">✏️</button>'
         f'    <button hx-delete="/suppliers/{s.id}" hx-target="#sup-{s.id}" hx-swap="outerHTML"'
         f'            hx-confirm="Excluir fornecedor \'{n}\'? Entradas de catálogo também serão removidas."'
-        f'            class="icon-btn text-slate-400 hover:text-red-400">🗑️</button>'
+        f'            class="icon-btn hover:text-red-400">🗑️</button>'
         f'  </div>'
         f'</div>'
         f'<div x-show="editing" class="flex-1 flex flex-wrap items-center gap-2 min-h-[44px]">'
         f'  <input x-model="n" class="field flex-1 min-w-[140px] text-sm" placeholder="Nome" />'
         f'  <input x-model="c" class="field flex-1 min-w-[120px] text-sm" placeholder="Contato" />'
         f'  <button @click="saveSup({s.id},n,c,$el)" class="icon-btn text-green-400 hover:text-green-300">💾</button>'
-        f'  <button @click="editing=false" class="icon-btn text-slate-400 hover:text-white">✕</button>'
+        f'  <button @click="editing=false" class="icon-btn hover:text-white">✕</button>'
         f'</div>'
         f'</div>'
     )
@@ -181,12 +208,16 @@ def _sup_row(s: models.Supplier) -> str:
 
 # --- INGREDIENTS ---
 @app.post("/ingredients", response_class=HTMLResponse)
-async def create_ingredient(name: str = Form(...), unit: str = Form(...), db: Session = Depends(get_db)):
-    ing = models.Ingredient(name=name, unit=unit)
+async def create_ingredient(
+    name: str = Form(...),
+    unit: str = Form(...),
+    category: str = Form("Outros"),
+    db: Session = Depends(get_db),
+):
+    ing = models.Ingredient(name=name, unit=unit, category=category)
     db.add(ing)
     db.commit()
     db.refresh(ing)
-    # OOB: add <option> to all ingredient selects across the page
     oob = f'<option value="{ing.id}" hx-swap-oob="beforeend:.ingredient-select">{ing.name}</option>'
     return HTMLResponse(content=_ing_row(ing) + oob, status_code=201)
 
@@ -196,6 +227,7 @@ async def update_ingredient(
     ing_id: int,
     name: str = Form(...),
     unit: str = Form(...),
+    category: str = Form("Outros"),
     db: Session = Depends(get_db),
 ):
     ing = db.query(models.Ingredient).filter_by(id=ing_id).first()
@@ -203,6 +235,7 @@ async def update_ingredient(
         raise HTTPException(404)
     ing.name = name
     ing.unit = unit
+    ing.category = category
     db.commit()
     return HTMLResponse("")
 
@@ -542,6 +575,95 @@ async def dashboard(request: Request, limite: float = 20.0, db: Session = Depend
         "total": len(all_metrics),
     })
 
+# ── Module 3: Shopping list / Compras ────────────────────────────────────────
+
+@app.get("/compras", response_class=HTMLResponse)
+async def compras_page(request: Request, db: Session = Depends(get_db)):
+    recipes  = db.query(models.Recipe).order_by(models.Recipe.name).all()
+    return templates.TemplateResponse("compras.html", {
+        "request": request,
+        "recipes": recipes,
+    })
+
+
+@app.post("/api/shopping-list", response_class=HTMLResponse)
+async def generate_shopping_list(request: Request, db: Session = Depends(get_db)):
+    """
+    Body: [{"recipe_id": 1, "portions": 50, "recipe_name": "..."}, ...]
+    Returns an HTML fragment grouped by ingredient category.
+    """
+    body = await request.json()
+
+    # Aggregate: ingredient_id → totals
+    agg: dict[int, dict] = {}
+    for entry in body:
+        recipe_id = int(entry.get("recipe_id", 0))
+        portions  = float(entry.get("portions", 1) or 1)
+        recipe = db.query(models.Recipe).filter_by(id=recipe_id).first()
+        if not recipe:
+            continue
+        for section in recipe.sections:
+            for item in section.items:
+                ing = item.ingredient
+                if not ing:
+                    continue
+                qty_bruto = item.quantity * item.correction_factor * portions
+                if ing.id not in agg:
+                    agg[ing.id] = {
+                        "name":     ing.name,
+                        "unit":     ing.unit,
+                        "category": ing.category or "Outros",
+                        "qty":      0.0,
+                    }
+                agg[ing.id]["qty"] += qty_bruto
+
+    if not agg:
+        return HTMLResponse(
+            '<p class="text-gray-500 text-sm py-6 text-center">Nenhum insumo encontrado nas receitas selecionadas.</p>'
+        )
+
+    # Group by category in a defined order
+    CAT_ORDER = ["Carnes", "Vegetais", "Temperos", "Laticínios", "Carboidratos", "Embalagens", "Outros"]
+    grouped: dict[str, list] = {c: [] for c in CAT_ORDER}
+    for item in agg.values():
+        cat = item["category"] if item["category"] in grouped else "Outros"
+        grouped[cat].append(item)
+
+    # Build HTML
+    html_parts: list[str] = []
+    for cat in CAT_ORDER:
+        items = sorted(grouped[cat], key=lambda x: x["name"])
+        if not items:
+            continue
+        rows = "".join(
+            f'<li class="flex items-center gap-3 py-2 border-b border-gray-100 last:border-0">'
+            f'  <input type="checkbox" class="w-4 h-4 accent-blue-600 flex-shrink-0" />'
+            f'  <span class="flex-1 text-gray-900 text-sm">{i["name"]}</span>'
+            f'  <span class="font-bold text-gray-900 text-sm tabular-nums">{i["qty"]:.3f}</span>'
+            f'  <span class="text-gray-500 text-xs w-6">{i["unit"]}</span>'
+            f'</li>'
+            for i in items
+        )
+        html_parts.append(
+            f'<div class="mb-5">'
+            f'  <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">'
+            f'    <span>{_cat_icon(cat)}</span> {cat}'
+            f'    <span class="ml-auto text-gray-400 font-normal normal-case">{len(items)} item{"s" if len(items) != 1 else ""}</span>'
+            f'  </h3>'
+            f'  <ul class="bg-white rounded-xl border border-gray-200 px-4 divide-y divide-gray-100">{rows}</ul>'
+            f'</div>'
+        )
+    return HTMLResponse("".join(html_parts))
+
+
+def _cat_icon(cat: str) -> str:
+    return {
+        "Carnes": "🥩", "Vegetais": "🥦", "Temperos": "🧄",
+        "Laticínios": "🧀", "Carboidratos": "🌾",
+        "Embalagens": "📦", "Outros": "📋",
+    }.get(cat, "📋")
+
+
 # ── Module 2: Labels ──────────────────────────────────────────────────────────
 
 @app.get("/labels", response_class=HTMLResponse)
@@ -550,20 +672,47 @@ async def labels_page(request: Request, db: Session = Depends(get_db)):
     batches = (
         db.query(models.ProductionBatch)
         .order_by(models.ProductionBatch.production_date.desc())
-        .limit(30)
+        .limit(50)
         .all()
     )
-    recipes = db.query(models.Recipe).all()
+    recipes = db.query(models.Recipe).order_by(models.Recipe.name).all()
+    # Serialise for Alpine.js consumption
+    templates_json = [
+        {
+            "id": t.id,
+            "name": t.name,
+            "width_mm": t.width_mm,
+            "height_mm": t.height_mm,
+            "printer_type": t.printer_type,
+            "printer_ip": t.printer_ip or "",
+            "printer_port": t.printer_port,
+            "fields_config": t.fields_config,
+        }
+        for t in label_templates
+    ]
+    batches_json = [
+        {
+            "id": b.id,
+            "batch_number": b.batch_number,
+            "product_name": b.product_name,
+            "production_date": b.production_date.strftime("%d/%m/%Y"),
+            "expiry_date": b.expiry_date.strftime("%d/%m/%Y"),
+            "weight_kg": b.weight_kg,
+            "ingredients_summary": b.ingredients_summary,
+        }
+        for b in batches
+    ]
     return templates.TemplateResponse("labels.html", {
         "request": request,
         "label_templates": label_templates,
         "batches": batches,
         "recipes": recipes,
-        "default_fields": label_service.DEFAULT_FIELDS_CONFIG,
+        "templates_json": templates_json,
+        "batches_json": batches_json,
     })
 
 
-@app.post("/labels", response_class=HTMLResponse)
+@app.post("/labels")
 async def create_label_template(
     name: str = Form(...),
     width_mm: float = Form(62.0),
@@ -586,11 +735,57 @@ async def create_label_template(
     db.add(tpl)
     db.commit()
     db.refresh(tpl)
-    return HTMLResponse(
-        content=f'<option value="{tpl.id}" selected>{tpl.name} ({tpl.width_mm}×{tpl.height_mm} mm)</option>',
-        headers={"HX-Trigger": "templateCreated"},
-        status_code=201,
-    )
+    return JSONResponse({
+        "id": tpl.id, "name": tpl.name,
+        "width_mm": tpl.width_mm, "height_mm": tpl.height_mm,
+        "printer_type": tpl.printer_type,
+        "printer_ip": tpl.printer_ip or "",
+        "printer_port": tpl.printer_port,
+        "fields_config": tpl.fields_config,
+    }, status_code=201)
+
+
+@app.delete("/labels/{template_id}", response_class=HTMLResponse)
+async def delete_label_template(template_id: int, db: Session = Depends(get_db)):
+    db.query(models.ProductionBatch).filter_by(label_template_id=template_id).update({"label_template_id": None})
+    tpl = db.query(models.LabelTemplate).filter_by(id=template_id).first()
+    if tpl:
+        db.delete(tpl)
+        db.commit()
+    return HTMLResponse("")
+
+
+@app.put("/labels/{template_id}")
+async def update_label_template(
+    template_id: int,
+    name: str = Form(...),
+    width_mm: float = Form(62.0),
+    height_mm: float = Form(40.0),
+    printer_type: str = Form("ZPL"),
+    printer_ip: str = Form(""),
+    printer_port: int = Form(9100),
+    fields_config: str = Form("[]"),
+    db: Session = Depends(get_db),
+):
+    tpl = db.query(models.LabelTemplate).filter_by(id=template_id).first()
+    if not tpl:
+        raise HTTPException(404)
+    tpl.name = name
+    tpl.width_mm = width_mm
+    tpl.height_mm = height_mm
+    tpl.printer_type = printer_type.upper()
+    tpl.printer_ip = printer_ip
+    tpl.printer_port = printer_port
+    tpl.fields_config = fields_config
+    db.commit()
+    return JSONResponse({
+        "id": tpl.id, "name": tpl.name,
+        "width_mm": tpl.width_mm, "height_mm": tpl.height_mm,
+        "printer_type": tpl.printer_type,
+        "printer_ip": tpl.printer_ip or "",
+        "printer_port": tpl.printer_port,
+        "fields_config": tpl.fields_config,
+    })
 
 
 @app.get("/labels/{template_id}/preview", response_class=HTMLResponse)

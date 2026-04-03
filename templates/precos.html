@@ -1,113 +1,80 @@
-<!DOCTYPE html>
-<html lang="pt-br">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SmartFood Ops 360 — Cotações e Preços</title>
-  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <style>
-    body { font-family: 'Outfit', sans-serif; background: #0f172a; color: #f8fafc; }
+{% extends "base.html" %}
+{% set active_page = "cotacoes" %}
 
-    input, select {
-      background: #1e293b; border: 1px solid #334155; border-radius: .5rem;
-      padding: .5rem .75rem; color: #f1f5f9; min-height: 44px;
-    }
-    input:focus, select:focus { border-color: #3b82f6; outline: 2px solid rgba(59,130,246,.25); }
+{% block title %}SmartFood Ops 360 — Cotações e Preços{% endblock %}
 
-    .btn { display:flex; align-items:center; justify-content:center;
-           min-height:48px; border-radius:.625rem; font-weight:600;
-           padding:0 1rem; transition:all .15s; cursor:pointer; }
-    .icon-btn { display:inline-flex; align-items:center; justify-content:center;
-                min-width:36px; min-height:36px; border-radius:.5rem;
-                transition:background .1s; cursor:pointer; font-size:14px; border:none; background:transparent; }
-    .icon-btn:hover { background:rgba(255,255,255,.07); }
+{% block extra_head %}
+<style>
+  /* Price input — compact, inline */
+  .price-input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: .5rem;
+    padding: .35rem .6rem;
+    color: #93c5fd;
+    font-family: 'Courier New', monospace;
+    font-size: .9rem; font-weight: 600;
+    text-align: right; width: 110px; min-height: 40px;
+    transition: border-color .15s;
+  }
+  .price-input:focus { border-color: var(--blue); outline: 2px solid rgba(59,130,246,.25); color: #fff; }
 
-    /* Price input — compact, inline */
-    .price-input {
-      background:#0f172a; border:1px solid #334155; border-radius:.5rem;
-      padding:.35rem .6rem; color:#93c5fd; font-family:'Courier New',monospace;
-      font-size:.9rem; font-weight:600; text-align:right; width:110px;
-      min-height:40px; transition:border-color .15s;
-    }
-    .price-input:focus { border-color:#3b82f6; outline:2px solid rgba(59,130,246,.25); color:#fff; }
+  /* Staleness */
+  .fresh  { color: #4ade80; }
+  .recent { color: #facc15; }
+  .stale  { color: #f87171; }
+</style>
+{% endblock %}
 
-    /* Staleness badge colours */
-    .fresh   { color:#4ade80; }   /* < 1 day */
-    .recent  { color:#facc15; }   /* 1-3 days */
-    .stale   { color:#f87171; }   /* > 3 days or never */
+{% block content %}
 
-    [x-cloak] { display:none !important; }
-  </style>
-</head>
-<body class="min-h-screen p-4 sm:p-6">
-<div class="max-w-5xl mx-auto">
-
-  <!-- ── Nav ──────────────────────────────────────────────────── -->
-  <header class="flex flex-wrap items-center gap-x-5 gap-y-2 mb-6 border-b border-slate-700 pb-3">
-    <h1 class="text-base sm:text-xl font-bold text-white mr-2">SmartFood Ops 360</h1>
-    <nav class="flex flex-wrap gap-3 text-sm">
-      <a href="/"              class="text-slate-400 hover:text-white">📦 Cadastros</a>
-      <a href="/precos"        class="text-blue-400 font-semibold border-b border-blue-400 pb-0.5">💰 Cotações</a>
-      <a href="/ficha-tecnica" class="text-slate-400 hover:text-white">📋 Ficha Técnica</a>
-      <a href="/labels"        class="text-slate-400 hover:text-white">🏷️ Etiquetas</a>
-      <a href="/dashboard"     class="text-slate-400 hover:text-white">📊 Dashboard</a>
-    </nav>
-  </header>
-
-  <!-- ── Title + global add ────────────────────────────────────── -->
-  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
+  <!-- Page header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
     <div>
-      <h2 class="text-2xl font-bold text-white">💰 Cotações e Preços</h2>
-      <p class="text-slate-400 text-sm mt-0.5">
+      <h1 class="text-2xl font-bold text-white">💰 Cotações e Preços</h1>
+      <p class="text-gray-400 text-sm mt-0.5">
         Atualize qualquer preço diretamente. As marcas auto-populam o FC na Ficha Técnica.
       </p>
     </div>
-    <!-- Quick-add: opens the inline form on the first group that has no entries,
-         or scrolls to a dedicated add section -->
-    <a href="#add-cotacao" class="btn bg-blue-600 hover:bg-blue-500 text-white text-sm px-5 no-underline">
-      + Nova Cotação
-    </a>
+    <a href="#add-cotacao" class="btn btn-primary text-sm no-underline">+ Nova Cotação</a>
   </div>
 
-  <!-- ── Staleness legend ──────────────────────────────────────── -->
-  <div class="flex flex-wrap gap-4 mb-5 text-xs text-slate-500">
+  <!-- Staleness legend -->
+  <div class="flex flex-wrap gap-4 mb-5 text-xs text-gray-500">
     <span><span class="fresh font-bold">●</span> Atualizado hoje</span>
     <span><span class="recent font-bold">●</span> 1–3 dias</span>
     <span><span class="stale font-bold">●</span> Mais de 3 dias / nunca</span>
-    <span class="ml-auto italic">Pressione Enter ou clique 💾 para salvar</span>
+    <span class="ml-auto italic">Enter ou blur = salva automaticamente</span>
   </div>
 
-  <!-- ═══════════════════════════════════════════════════════════
-       GROUPS: one per ingredient
+  <!-- ══════════════════════════════════════════════════════════
+       GROUPS
   ═══════════════════════════════════════════════════════════ -->
   {% for g in groups %}
   {% set ing = g.ingredient %}
-  <div class="mb-4" id="ing-group-{{ ing.id }}">
-    <details open class="group bg-slate-800/60 border border-slate-700/60 rounded-xl overflow-hidden">
+  <div class="mb-3" id="ing-group-{{ ing.id }}">
+    <details open class="group"
+             style="background:var(--surface); border:1px solid var(--border); border-radius:.875rem; overflow:hidden">
 
-      <!-- Summary: ingredient name + entry count -->
       <summary class="flex items-center justify-between px-4 py-3 cursor-pointer select-none
-                      hover:bg-slate-700/30 list-none">
+                      hover:bg-gray-800/50 list-none">
         <div class="flex items-center gap-3">
           <span class="font-semibold text-white">{{ ing.name }}</span>
-          <span class="text-xs text-slate-500 bg-slate-700 rounded-full px-2 py-0.5">
+          <span class="text-xs text-gray-500 rounded-full px-2 py-0.5"
+                style="background:var(--card)">
             {{ ing.unit }} · {{ g.entries | length }} cotação{{ 's' if g.entries | length != 1 else '' }}
           </span>
         </div>
-        <span class="text-slate-500 text-xs group-open:hidden">▼</span>
-        <span class="text-slate-500 text-xs hidden group-open:inline">▲</span>
+        <span class="text-gray-500 text-xs group-open:hidden">▼</span>
+        <span class="text-gray-500 text-xs hidden group-open:inline">▲</span>
       </summary>
 
       <div class="px-4 pb-4">
 
-        <!-- Entries table (always-visible price inputs) -->
         {% if g.entries %}
         <div class="overflow-x-auto mb-3">
           <table class="w-full text-sm mt-2">
-            <thead class="text-xs text-slate-500 border-b border-slate-700">
+            <thead class="text-xs text-gray-500 border-b border-gray-700">
               <tr>
                 <th class="text-left pb-2 pr-3">Marca</th>
                 <th class="text-left pb-2 pr-3">Fornecedor</th>
@@ -117,16 +84,16 @@
                 <th class="pb-2"></th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-slate-800/50">
+            <tbody class="divide-y divide-gray-800/50">
               {% for e in g.entries %}
               {% set fc = (100 / e.manufacturer.yield_percentage) | round(3) if e.manufacturer and e.manufacturer.yield_percentage > 0 else 1.0 %}
-              {% set days_old = ((now() - e.updated_at).days if e.updated_at else 999) if false else 0 %}
               <tr id="cat-row-{{ e.id }}"
                   x-data="{
                     price: {{ e.last_price or 0 }},
                     saving: false,
                     saved: false,
                     async save() {
+                      if (this.saving) return;
                       this.saving = true;
                       await fetch('/catalog/{{ e.id }}', {
                         method: 'PUT',
@@ -135,33 +102,32 @@
                       });
                       this.saving = false;
                       this.saved = true;
+                      toast('Preço salvo');
                       setTimeout(() => this.saved = false, 2500);
                     }
                   }"
-                  class="hover:bg-slate-700/20">
+                  class="hover:bg-gray-800/30">
 
                 <td class="py-2.5 pr-3 text-white font-medium">
                   {{ e.manufacturer.brand_name }}
-                  <span class="text-slate-600 text-xs block">rend. {{ e.manufacturer.yield_percentage }}%</span>
+                  <span class="text-gray-600 text-xs block">rend. {{ e.manufacturer.yield_percentage }}%</span>
                 </td>
-                <td class="py-2.5 pr-3 text-slate-300">{{ e.supplier.name }}</td>
-                <td class="py-2.5 pr-3 font-mono text-slate-400 text-xs">FC {{ fc }}</td>
+                <td class="py-2.5 pr-3 text-gray-300">{{ e.supplier.name }}</td>
+                <td class="py-2.5 pr-3 font-mono text-gray-400 text-xs">FC {{ fc }}</td>
 
-                <!-- ── Editable price field ── -->
                 <td class="py-2.5 pr-3 text-right">
                   <div class="flex items-center justify-end gap-1.5">
-                    <span class="text-slate-500 text-sm">R$</span>
+                    <span class="text-gray-500 text-sm">R$</span>
                     <input type="number" x-model="price" step="0.01" min="0"
                            @keydown.enter="save()"
+                           @blur="save()"
                            class="price-input"
-                           title="Digite o preço e pressione Enter ou clique 💾" />
+                           title="Digite o preço e pressione Enter ou Tab para salvar" />
                   </div>
                 </td>
 
-                <!-- ── Timestamp ── -->
                 <td class="py-2.5 text-right whitespace-nowrap">
                   {% if e.updated_at %}
-                    {% set age_days = ((e.updated_at | string)[:10] | string) %}
                     <span class="text-xs
                       {%- if e.updated_at and (now() - e.updated_at).days == 0 %} fresh
                       {%- elif e.updated_at and (now() - e.updated_at).days <= 3 %} recent
@@ -173,12 +139,11 @@
                   {% endif %}
                 </td>
 
-                <!-- ── Actions ── -->
                 <td class="py-2.5 pl-2">
                   <div class="flex items-center gap-1">
                     <button @click="save()" :disabled="saving"
                             class="icon-btn"
-                            :class="saved ? 'text-green-400' : 'text-slate-400 hover:text-blue-400'"
+                            :class="saved ? 'text-green-400' : 'text-gray-400 hover:text-blue-400'"
                             title="Salvar preço">
                       <span x-show="!saved" x-text="saving ? '…' : '💾'"></span>
                       <span x-show="saved" class="text-green-400 font-bold">✓</span>
@@ -186,7 +151,8 @@
                     <button hx-delete="/catalog/{{ e.id }}"
                             hx-target="#cat-row-{{ e.id }}" hx-swap="outerHTML"
                             hx-confirm="Remover cotação de {{ e.manufacturer.brand_name }} / {{ e.supplier.name }}?"
-                            class="icon-btn text-slate-500 hover:text-red-400"
+                            @htmx:after-request="$event.detail.successful && toast('Cotação removida', 'info')"
+                            class="icon-btn text-gray-500 hover:text-red-400"
                             title="Excluir">🗑️</button>
                   </div>
                 </td>
@@ -196,10 +162,10 @@
           </table>
         </div>
         {% else %}
-        <p class="text-xs text-slate-600 py-3">Nenhuma cotação para este ingrediente ainda.</p>
+        <p class="text-xs text-gray-600 py-3">Nenhuma cotação para este ingrediente ainda.</p>
         {% endif %}
 
-        <!-- ── Inline add form per ingredient ─────────────────── -->
+        <!-- Inline add form per ingredient -->
         <div x-data="{open: false}" class="mt-2">
           <button @click="open = !open"
                   class="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 transition">
@@ -210,15 +176,14 @@
                 hx-post="/catalog"
                 hx-target="#cat-row-add-{{ ing.id }}"
                 hx-swap="beforebegin"
-                @htmx:after-request="open = $event.detail.successful ? false : open; $el.reset()"
+                @htmx:after-request="open = $event.detail.successful ? false : open; $el.reset(); $event.detail.successful && toast('Cotação adicionada')"
                 class="mt-3 grid grid-cols-1 sm:grid-cols-4 gap-2 items-end">
 
-            <!-- Hidden ingredient -->
             <input type="hidden" name="ingredient_id" value="{{ ing.id }}" />
 
             <div>
-              <label class="text-xs text-slate-500 block mb-1">Marca</label>
-              <select name="manufacturer_id" required class="w-full text-sm">
+              <label class="text-xs text-gray-500 block mb-1">Marca</label>
+              <select name="manufacturer_id" required class="text-sm">
                 <option value="">Selecione...</option>
                 {% for m in g.manufacturers %}
                 <option value="{{ m.id }}">{{ m.brand_name }} ({{ m.yield_percentage }}%)</option>
@@ -227,8 +192,8 @@
             </div>
 
             <div>
-              <label class="text-xs text-slate-500 block mb-1">Fornecedor</label>
-              <select name="supplier_id" required class="w-full text-sm">
+              <label class="text-xs text-gray-500 block mb-1">Fornecedor</label>
+              <select name="supplier_id" required class="text-sm">
                 <option value="">Selecione...</option>
                 {% for s in suppliers %}
                 <option value="{{ s.id }}">{{ s.name }}</option>
@@ -237,18 +202,14 @@
             </div>
 
             <div>
-              <label class="text-xs text-slate-500 block mb-1">Preço (R$)</label>
+              <label class="text-xs text-gray-500 block mb-1">Preço (R$)</label>
               <input type="number" name="last_price" step="0.01" min="0"
-                     placeholder="0,00" required class="w-full text-sm" />
+                     placeholder="0,00" required class="text-sm" />
             </div>
 
-            <button type="submit"
-                    class="btn bg-blue-600 hover:bg-blue-500 text-white text-sm">
-              Salvar
-            </button>
+            <button type="submit" class="btn btn-primary text-sm">Salvar</button>
           </form>
 
-          <!-- Anchor for HTMX beforebegin swap -->
           <tr id="cat-row-add-{{ ing.id }}" style="display:none"></tr>
         </div>
 
@@ -257,25 +218,25 @@
   </div>
   {% endfor %}
 
-  <!-- ═══════════════════════════════════════════════════════════
-       GLOBAL ADD — anchor target for nav link
+  <!-- ══════════════════════════════════════════════════════════
+       GLOBAL ADD
   ═══════════════════════════════════════════════════════════ -->
-  <section id="add-cotacao" class="mt-6 bg-slate-800/60 border border-slate-700/60 rounded-xl p-5">
-    <h3 class="text-base font-semibold mb-4 border-b border-slate-700 pb-2">
+  <section id="add-cotacao" class="mt-6 card p-5">
+    <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wide mb-4 border-b border-gray-700 pb-2">
       + Nova Cotação (qualquer ingrediente)
     </h3>
     <form hx-post="/catalog"
           hx-target="#global-add-result"
           hx-swap="innerHTML"
-          @htmx:after-request="$event.detail.successful && $refs.globalForm.reset()"
+          @htmx:after-request="$event.detail.successful && ($refs.globalForm.reset(), toast('Cotação registrada'))"
           x-ref="globalForm"
           class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
 
       <div>
-        <label class="text-xs text-slate-400 block mb-1">Ingrediente</label>
+        <label class="text-xs text-gray-400 block mb-1">Ingrediente</label>
         <select name="ingredient_id"
                 hx-get="/manufacturers-search" hx-trigger="change"
-                hx-target="#global-man-select" required class="w-full text-sm">
+                hx-target="#global-man-select" required class="text-sm">
           <option value="">Selecione...</option>
           {% for ing in ingredients %}
           <option value="{{ ing.id }}">{{ ing.name }}</option>
@@ -284,15 +245,15 @@
       </div>
 
       <div>
-        <label class="text-xs text-slate-400 block mb-1">Marca</label>
-        <select id="global-man-select" name="manufacturer_id" required class="w-full text-sm">
+        <label class="text-xs text-gray-400 block mb-1">Marca</label>
+        <select id="global-man-select" name="manufacturer_id" required class="text-sm">
           <option value="">Aguardando ingrediente...</option>
         </select>
       </div>
 
       <div>
-        <label class="text-xs text-slate-400 block mb-1">Fornecedor</label>
-        <select name="supplier_id" required class="w-full text-sm">
+        <label class="text-xs text-gray-400 block mb-1">Fornecedor</label>
+        <select name="supplier_id" required class="text-sm">
           <option value="">Selecione...</option>
           {% for s in suppliers %}
           <option value="{{ s.id }}">{{ s.name }}</option>
@@ -301,28 +262,19 @@
       </div>
 
       <div>
-        <label class="text-xs text-slate-400 block mb-1">Preço (R$)</label>
+        <label class="text-xs text-gray-400 block mb-1">Preço (R$)</label>
         <input type="number" name="last_price" step="0.01" min="0"
-               placeholder="0,00" required class="w-full text-sm" />
+               placeholder="0,00" required class="text-sm" />
       </div>
 
       <div class="sm:col-span-2 lg:col-span-4">
-        <button type="submit" class="btn bg-blue-600 hover:bg-blue-500 text-white text-sm w-full sm:w-auto px-8">
-          💾 Registrar Cotação
-        </button>
+        <button type="submit" class="btn btn-primary text-sm">💾 Registrar Cotação</button>
       </div>
     </form>
     <div id="global-add-result" class="mt-3 text-sm"></div>
-    <p class="text-xs text-slate-600 mt-2">
+    <p class="text-xs text-gray-600 mt-2">
       Após salvar, recarregue a página para ver a nova entrada no grupo do ingrediente.
     </p>
   </section>
 
-</div><!-- /max-w -->
-
-<script>
-  // Expose now() to Jinja2 equivalents via Alpine if needed
-  // (actual date comparison is done server-side in Jinja2 above)
-</script>
-</body>
-</html>
+{% endblock %}
