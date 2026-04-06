@@ -757,65 +757,160 @@ async def dashboard(request: Request, limite: float = 20.0, db: Session = Depend
 # ── Bulk price update by supplier ────────────────────────────────────────────
 
 @app.get("/precos/fornecedor", response_class=HTMLResponse)
-async def get_fornecedor_precos(supplier_id: int, db: Session = Depends(get_db)):
-    """Return all catalog entries for a supplier as an editable price form fragment."""
-    catalog = (
-        db.query(models.SupplierCatalog)
-        .filter_by(supplier_id=supplier_id)
-        .order_by(models.SupplierCatalog.ingredient_id)
-        .all()
-    )
-    if not catalog:
+async def get_fornecedor_precos(
+    supplier_id_bulk: int = 0,
+    list_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    if not supplier_id_bulk:
+        return HTMLResponse("")
+
+    supplier  = db.query(models.Supplier).filter_by(id=supplier_id_bulk).first()
+    if not supplier:
+        return HTMLResponse("")
+
+    all_lists = (db.query(models.ShoppingList)
+                 .order_by(models.ShoppingList.id.desc()).limit(15).all())
+
+    if not all_lists:
         return HTMLResponse(
-            "<p class='text-sm text-gray-500 mt-3 py-4 text-center'>Nenhum produto cadastrado para este fornecedor ainda.<br>"
-            "<span class='text-xs text-gray-600'>Cadastre entradas em <a href=\"/precos#add-cotacao\" class=\"text-blue-400 underline\">Nova Cotação</a> primeiro.</span></p>"
+            "<p class='text-sm text-gray-500 py-4 text-center'>"
+            "Gere uma lista em <a href='/compras' class='text-blue-400 underline'>Compras</a> primeiro "
+            "para usar o motor inteligente de cotação.</p>"
         )
 
-    rows = "".join(
-        f'<div class="flex items-center justify-between gap-3 py-2.5 border-b border-gray-800 last:border-0">'
-        f'  <div class="flex-1 min-w-0">'
-        f'    <p class="text-sm font-medium text-white truncate">{c.ingredient.name}</p>'
-        f'    <p class="text-xs text-gray-500">{c.manufacturer.brand_name} · FC {round(100/c.manufacturer.yield_percentage,3) if c.manufacturer.yield_percentage > 0 else 1}</p>'
-        f'  </div>'
-        f'  <input type="hidden" name="catalog_ids" value="{c.id}" />'
-        f'  <div class="flex items-center gap-1.5 flex-shrink-0">'
-        f'    <span class="text-gray-500 text-sm">R$</span>'
-        f'    <input type="number" name="prices" value="{c.last_price or 0}" step="0.01" min="0"'
-        f'           class="w-28 text-right font-mono text-sm" style="color:#93c5fd; min-height:36px;" />'
-        f'  </div>'
-        f'</div>'
-        for c in catalog
+    curr_list = next((l for l in all_lists if l.id == list_id), all_lists[0])
+
+    # List selector dropdown so user can switch to a previous list
+    list_opts = "".join(
+        f'<option value="{l.id}" {"selected" if l.id == curr_list.id else ""}>{l.name}</option>'
+        for l in all_lists
     )
-    return HTMLResponse(
-        f'<div class="mt-3 rounded-xl px-4 py-2" style="background:var(--bg); border:1px solid var(--border)">'
+    html = (
+        f'<div class="flex flex-col sm:flex-row sm:items-center gap-2 mb-4 p-3 rounded-xl"'
+        f'     style="background:var(--bg);border:1px solid var(--border)">'
+        f'  <label class="text-xs text-gray-400 whitespace-nowrap">Base de demanda:</label>'
+        f'  <select name="list_id"'
+        f'          hx-get="/precos/fornecedor"'
+        f'          hx-include="[name=\'supplier_id_bulk\'],[name=\'list_id\']"'
+        f'          hx-trigger="change"'
+        f'          hx-target="#supplier-price-rows"'
+        f'          class="text-sm flex-1">'
+        f'    {list_opts}'
+        f'  </select>'
+        f'</div>'
+    )
+
+    # Cross-reference: only items whose ingredient category the supplier covers
+    sup_cats    = {sc.category for sc in supplier.supplier_categories}
+    list_items  = [i for i in curr_list.items
+                   if i.ingredient and (i.ingredient.category or "Outros") in sup_cats]
+
+    if not list_items:
+        html += (
+            f"<p class='text-sm text-gray-500 py-3'>"
+            f"<strong>{supplier.name}</strong> não tem categorias compatíveis com esta lista. "
+            f"Configure as categorias do fornecedor em "
+            f"<a href='/' class='text-blue-400 underline'>Cadastros</a>.</p>"
+        )
+        return HTMLResponse(html)
+
+    rows = ""
+    for li in sorted(list_items, key=lambda x: x.ingredient.name):
+        ing   = li.ingredient
+        # Last known price/brand from this supplier for this ingredient
+        cat   = (db.query(models.SupplierCatalog)
+                 .filter_by(supplier_id=supplier_id_bulk, ingredient_id=ing.id)
+                 .order_by(models.SupplierCatalog.id.desc()).first())
+        last_price = cat.last_price if cat else ""
+        brand_id   = cat.manufacturer_id if cat else ""
+        brands     = db.query(models.IngredientManufacturer).filter_by(ingredient_id=ing.id).all()
+        brand_opts = "".join(
+            f'<option value="{b.id}" {"selected" if brand_id == b.id else ""}>{b.brand_name}</option>'
+            for b in brands
+        )
+        badge = CAT_STYLE.get(ing.category or "Outros", CAT_STYLE["Outros"])
+        rows += (
+            f'<div class="flex flex-col sm:flex-row sm:items-center gap-3 py-3'
+            f'            border-b border-gray-800 last:border-0">'
+            f'  <div class="flex-1 min-w-0">'
+            f'    <div class="flex items-center gap-2 flex-wrap">'
+            f'      <span class="text-sm font-medium text-white">{ing.name}</span>'
+            f'      <span class="cat-badge" data-cat="{ing.category or "Outros"}">'
+            f'        {badge["emoji"]} {ing.category or "Outros"}'
+            f'      </span>'
+            f'      <span class="text-xs text-blue-400">{li.qty:.3f} {ing.unit}</span>'
+            f'    </div>'
+            f'    <input type="hidden" name="ingredient_ids" value="{ing.id}" />'
+            f'    <select name="manufacturer_ids" class="text-xs mt-1 w-full sm:w-64">'
+            f'      <option value="">Qual a marca ofertada?</option>'
+            f'      {brand_opts}'
+            f'    </select>'
+            f'  </div>'
+            f'  <div class="flex items-center gap-2 flex-shrink-0">'
+            f'    <div class="text-right hidden sm:block">'
+            f'      <p class="text-xs text-gray-500">Último:</p>'
+            f'      <p class="text-sm text-gray-400 font-mono">R$ {last_price if last_price != "" else "—"}</p>'
+            f'    </div>'
+            f'    <div class="flex items-center gap-1">'
+            f'      <span class="text-gray-500 text-sm">R$</span>'
+            f'      <input type="number" name="prices" step="0.01" min="0"'
+            f'             value="{last_price if last_price != "" else ""}"'
+            f'             placeholder="Novo preço"'
+            f'             class="w-28 text-right font-mono text-sm" style="color:#93c5fd;min-height:36px" />'
+            f'    </div>'
+            f'  </div>'
+            f'</div>'
+        )
+
+    html += (
+        f'<div class="rounded-xl px-4 py-1 mt-2"'
+        f'     style="background:var(--bg);border:1px solid var(--border)">'
         f'  {rows}'
         f'</div>'
         f'<button type="submit" class="btn btn-primary btn-full mt-4 text-sm">'
-        f'  💾 Salvar {len(catalog)} preço{"s" if len(catalog) != 1 else ""}'
+        f'  💾 Salvar cotação — {len(list_items)} item{"ns" if len(list_items) != 1 else ""}'
         f'</button>'
     )
+    return HTMLResponse(html)
 
 
 @app.post("/precos/bulk-update", response_class=HTMLResponse)
 async def bulk_update_precos(request: Request, db: Session = Depends(get_db)):
-    form = await request.form()
-    catalog_ids = form.getlist("catalog_ids")
-    prices      = form.getlist("prices")
+    form           = await request.form()
+    supplier_id    = int(form.get("supplier_id_bulk", 0) or 0)
+    ingredient_ids = form.getlist("ingredient_ids")
+    manufacturer_ids = form.getlist("manufacturer_ids")
+    prices         = form.getlist("prices")
+
     updated = 0
-    for cid, price_str in zip(catalog_ids, prices):
+    for i_id, m_id, price_str in zip(ingredient_ids, manufacturer_ids, prices):
+        if not m_id or not price_str:
+            continue
         try:
-            cat = db.query(models.SupplierCatalog).filter_by(id=int(cid)).first()
-            if cat:
-                cat.last_price = float(price_str)
-                cat.updated_at = datetime.utcnow()
-                updated += 1
+            price = float(price_str)
+            entry = (db.query(models.SupplierCatalog)
+                     .filter_by(supplier_id=supplier_id,
+                                ingredient_id=int(i_id),
+                                manufacturer_id=int(m_id)).first())
+            if entry:
+                entry.last_price = price
+                entry.updated_at = datetime.utcnow()
+            else:
+                db.add(models.SupplierCatalog(
+                    supplier_id=supplier_id,
+                    ingredient_id=int(i_id),
+                    manufacturer_id=int(m_id),
+                    last_price=price,
+                ))
+            updated += 1
         except (ValueError, TypeError):
             pass
     db.commit()
     return HTMLResponse(
         f'<div class="p-3 rounded-lg text-sm text-green-300 mt-3 flex items-center gap-2"'
-        f' style="background:rgba(22,101,52,.25); border:1px solid rgba(34,197,94,.2)">'
-        f'  ✓ {updated} preço{"s" if updated != 1 else ""} atualizado{"s" if updated != 1 else ""} com sucesso!'
+        f' style="background:rgba(22,101,52,.25);border:1px solid rgba(34,197,94,.2)">'
+        f'  ✓ {updated} item{"ns" if updated != 1 else ""} atualizado{"s" if updated != 1 else ""} com sucesso!'
         f'</div>'
     )
 
@@ -866,6 +961,16 @@ async def generate_shopping_list(request: Request, db: Session = Depends(get_db)
         return HTMLResponse(
             '<p class="text-gray-500 text-sm py-6 text-center">Nenhum insumo encontrado nas receitas selecionadas.</p>'
         )
+
+    # Auto-save this shopping list so /precos can cross-reference it
+    s_list = models.ShoppingList(
+        name=f"Lista gerada em {datetime.utcnow().strftime('%d/%m/%Y às %H:%M')}"
+    )
+    db.add(s_list)
+    db.flush()
+    for ing_id, data in agg.items():
+        db.add(models.ShoppingListItem(list_id=s_list.id, ingredient_id=ing_id, qty=data["qty"]))
+    db.commit()
 
     # Group by category in a defined order
     CAT_ORDER = ["Carnes", "Vegetais", "Temperos", "Laticínios", "Carboidratos", "Embalagens", "Outros"]

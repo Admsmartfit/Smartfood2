@@ -108,6 +108,31 @@ class BOMItem(Base):
     manufacturer = relationship("IngredientManufacturer")
 
 
+# ── Module 3: Shopping Lists ─────────────────────────────────────────────────
+
+class ShoppingList(Base):
+    __tablename__ = "shopping_lists"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    name       = Column(String, nullable=False)
+
+    items = relationship("ShoppingListItem", back_populates="shopping_list",
+                         cascade="all, delete-orphan")
+
+
+class ShoppingListItem(Base):
+    __tablename__ = "shopping_list_items"
+
+    id            = Column(Integer, primary_key=True, index=True)
+    list_id       = Column(Integer, ForeignKey("shopping_lists.id"), nullable=False)
+    ingredient_id = Column(Integer, ForeignKey("ingredients.id"), nullable=False)
+    qty           = Column(Float, nullable=False)
+
+    shopping_list = relationship("ShoppingList", back_populates="items")
+    ingredient    = relationship("Ingredient")
+
+
 # ── Module 2: Labels ──────────────────────────────────────────────────────────
 
 class LabelTemplate(Base):

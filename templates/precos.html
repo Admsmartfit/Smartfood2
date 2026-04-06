@@ -5,6 +5,16 @@
 
 {% block extra_head %}
 <style>
+  /* Category badges (same as index.html) */
+  .cat-badge { font-size: .65rem; padding: .15rem .45rem; border-radius: .3rem; }
+  [data-cat="Carnes"]        { color: #fca5a5; background: #450a0a; }
+  [data-cat="Vegetais"]      { color: #86efac; background: #052e16; }
+  [data-cat="Temperos"]      { color: #fcd34d; background: #451a03; }
+  [data-cat="Laticínios"]    { color: #fde68a; background: #422006; }
+  [data-cat="Carboidratos"]  { color: #fdba74; background: #431407; }
+  [data-cat="Embalagens"]    { color: #a5b4fc; background: #1e1b4b; }
+  [data-cat="Outros"]        { color: #9ca3af; background: #1f2937; }
+
   /* Price input — compact, inline */
   .price-input {
     background: var(--bg);
@@ -57,37 +67,44 @@
       📝 Recebeu Tabela de Preços? Atualize por Fornecedor
     </h3>
 
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <div>
-        <label class="text-xs text-gray-400 block mb-1">Selecione o Fornecedor</label>
-        <select hx-get="/precos/fornecedor"
-                hx-include="[name='supplier_id_bulk']"
-                hx-trigger="change"
-                hx-target="#supplier-price-rows"
-                name="supplier_id_bulk"
-                class="text-sm">
-          <option value="">— selecione —</option>
-          {% for s in suppliers %}
-          <option value="{{ s.id }}">{{ s.name }}</option>
-          {% endfor %}
-        </select>
-        <p class="text-xs text-gray-600 mt-1">
-          Todos os produtos deste fornecedor aparecem abaixo para edição em massa.
-        </p>
-      </div>
-
-      <div class="text-xs text-gray-600 hidden sm:flex flex-col justify-center gap-1 pl-4 border-l border-gray-800">
-        <p class="text-gray-500 font-medium">Como usar:</p>
-        <p>1. Selecione o fornecedor</p>
-        <p>2. Ajuste os preços conforme a tabela recebida</p>
-        <p>3. Clique em "Salvar preços"</p>
-      </div>
-    </div>
-
+    <!-- The entire block is one form so supplier_id_bulk is included in the POST -->
     <form hx-post="/precos/bulk-update"
           hx-target="#bulk-update-result"
           hx-swap="innerHTML"
           @htmx:after-request="$event.detail.successful && setTimeout(() => location.reload(), 1500)">
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Selecione o Fornecedor</label>
+          <select hx-get="/precos/fornecedor"
+                  hx-include="[name='supplier_id_bulk'],[name='list_id']"
+                  hx-trigger="change"
+                  hx-target="#supplier-price-rows"
+                  name="supplier_id_bulk"
+                  class="text-sm">
+            <option value="">— selecione —</option>
+            {% for s in suppliers %}
+            <option value="{{ s.id }}">
+              {{ s.name }}
+              {% if s.supplier_categories %}
+              · {% for sc in s.supplier_categories %}{{ cat_style[sc.category].emoji }}{% endfor %}
+              {% endif %}
+            </option>
+            {% endfor %}
+          </select>
+          <p class="text-xs text-gray-600 mt-1">
+            Itens cruzados com a última lista de compras gerada em /compras.
+          </p>
+        </div>
+
+        <div class="text-xs text-gray-600 hidden sm:flex flex-col justify-center gap-1 pl-4 border-l border-gray-800">
+          <p class="text-gray-500 font-medium">Fluxo inteligente:</p>
+          <p>1. Gere a lista em <a href="/compras" class="text-blue-400 underline">Compras</a></p>
+          <p>2. Selecione o fornecedor aqui</p>
+          <p>3. O sistema filtra só o que ele fornece</p>
+        </div>
+      </div>
+
       <div id="supplier-price-rows"></div>
       <div id="bulk-update-result"></div>
     </form>
