@@ -20,6 +20,7 @@ _MIGRATIONS = [
     "ALTER TABLE ingredients ADD COLUMN category TEXT DEFAULT 'Outros'",
     "ALTER TABLE recipes ADD COLUMN rendimento_unidades INTEGER DEFAULT 1",
     "ALTER TABLE recipes ADD COLUMN peso_porcao_g REAL DEFAULT 0.0",
+    "ALTER TABLE bom_items ADD COLUMN display_unit TEXT DEFAULT ''",
 ]
 with engine.connect() as _conn:
     for _sql in _MIGRATIONS:
@@ -591,6 +592,7 @@ async def get_recipe(recipe_id: int, db: Session = Depends(get_db)):
                 "availableBrands": brands,
                 "price":          price,
                 "qty":            item.quantity,
+                "displayUnit":    item.display_unit or "",
                 "fc":             item.correction_factor,
                 "fcoc":           item.cooking_factor,
             })
@@ -654,6 +656,7 @@ def _persist_recipe_body(body: dict, db: Session, recipe: models.Recipe):
                 ingredient_id=int(it["ingredientId"]),
                 manufacturer_id=int(it["manufacturerId"]) if it.get("manufacturerId") else None,
                 quantity=float(it.get("qty", 0)),
+                display_unit=it.get("displayUnit", ""),
                 correction_factor=float(it.get("fc", 1.0)),
                 cooking_factor=float(it.get("fcoc", 1.0)),
             ))

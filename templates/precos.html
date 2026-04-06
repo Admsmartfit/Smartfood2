@@ -78,7 +78,7 @@
       <form hx-post="/precos/bulk-update"
             hx-target="#bulk-update-result"
             hx-swap="innerHTML"
-            @htmx:after-request="$event.detail.successful && setTimeout(() => location.reload(), 1500)">
+            @htmx:after-request="$event.detail.successful && $event.detail.requestConfig.verb === 'post' && setTimeout(() => location.reload(), 1500)">
 
         <div class="max-w-md mb-5">
           <label class="text-xs text-gray-400 block mb-1.5">Fornecedor da tabela recebida</label>
@@ -189,7 +189,15 @@
   <!-- ══════════════════════════════════════════════════════════
        ABA 3 — Catálogo Completo (auditoria + exclusão)
   ═══════════════════════════════════════════════════════════ -->
-  <div x-show="tab === 'catalogo'" x-cloak x-transition.opacity>
+  <div x-show="tab === 'catalogo'" x-cloak x-transition.opacity x-data="{ search: '' }">
+
+    <div class="mb-4">
+      <div class="relative">
+        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm pointer-events-none">🔍</span>
+        <input type="text" x-model="search" placeholder="Buscar ingrediente..."
+               class="text-sm w-full pl-9" autocomplete="off" />
+      </div>
+    </div>
 
     <div class="flex flex-wrap gap-4 mb-4 text-xs text-gray-500 px-1">
       <span><span class="fresh font-bold">●</span> Atualizado hoje</span>
@@ -201,7 +209,8 @@
     <div class="space-y-2">
       {% for g in groups %}
       {% set ing = g.ingredient %}
-      <div id="ing-group-{{ ing.id }}">
+      <div id="ing-group-{{ ing.id }}" data-name="{{ ing.name | lower }}"
+           x-show="!search || $el.dataset.name.includes(search.toLowerCase())">
         <details class="group card overflow-hidden">
           <summary class="flex items-center justify-between px-4 py-3 cursor-pointer select-none
                           hover:bg-gray-800/50 list-none">

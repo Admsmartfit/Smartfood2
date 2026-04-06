@@ -100,6 +100,7 @@ class BOMItem(Base):
     quantity = Column(Float, nullable=False)
     correction_factor = Column(Float, default=1.0) # FC
     cooking_factor = Column(Float, default=1.0) # FCoc
+    display_unit = Column(String, default="")  # Unit chosen by user on screen (g, ml, etc.)
 
     manufacturer_id = Column(Integer, ForeignKey("ingredient_manufacturers.id"), nullable=True)
 

@@ -441,16 +441,29 @@ function recipeEditor() {
         this.observacoes       = data.observacoes;
         this.rendimentoUnidades = data.rendimentoUnidades || 1;
         this.pesoPorcaoG       = data.pesoPorcaoG || 0;
-        // Hydrate baseUnit/displayUnit from ingredient catalogue
+        // Hydrate baseUnit/displayUnit and convert qty from DB base unit to display unit
         this.sections = data.sections.map(sec => ({
           ...sec,
           items: sec.items.map(item => {
             const ing = this.ingredients.find(i => i.id == item.ingredientId);
             const base = ing ? (ing.unit || 'kg').toLowerCase() : 'kg';
-            let disp = base;
-            if (base === 'kg') disp = 'g';
-            else if (base === 'l') disp = 'ml';
-            return { ...item, baseUnit: base, displayUnit: disp };
+
+            // Use saved displayUnit if present; fallback to smart default for old records
+            let disp = item.displayUnit;
+            if (!disp) {
+              if (base === 'kg') disp = 'g';
+              else if (base === 'l') disp = 'ml';
+              else disp = base;
+            }
+
+            // Convert qty stored in base unit (kg/L) back to display unit (g/ml) for the screen
+            let displayQty = item.qty;
+            if (base === 'kg' && disp === 'g')   displayQty = item.qty * 1000;
+            if (base === 'l'  && disp === 'ml')  displayQty = item.qty * 1000;
+            if (base === 'g'  && disp === 'kg')  displayQty = item.qty / 1000;
+            if (base === 'ml' && disp === 'l')   displayQty = item.qty / 1000;
+
+            return { ...item, baseUnit: base, displayUnit: disp, qty: displayQty };
           }),
         }));
         this.saveStatus   = '';
@@ -500,7 +513,7 @@ function recipeEditor() {
     addItem(sIndex) {
       this.sections[sIndex].items.push({
         ingredientId: '', manufacturerId: '', availableBrands: [],
-        price: 0, qty: 0, baseUnit: 'kg', displayUnit: 'kg', fc: 1.0, fcoc: 1.0,
+        price: 0, qty: 0, baseUnit: 'kg', displayUnit: 'g', fc: 1.0, fcoc: 1.0,
       });
     },
 
@@ -610,7 +623,14 @@ function recipeEditor() {
         energyCost: this.energyCost, observacoes: this.observacoes,
         rendimentoUnidades: parseInt(this.rendimentoUnidades) || 1,
         pesoPorcaoG: parseFloat(this.pesoPorcaoG) || 0,
-        sections: this.sections,
+        // Convert display qty (g/ml) back to base unit (kg/L) before sending to DB
+        sections: this.sections.map(sec => ({
+          ...sec,
+          items: sec.items.map(item => ({
+            ...item,
+            qty: this._qtyInBase(item),
+          })),
+        })),
       };
       const isNew = !this.recipeId;
       const url    = isNew ? '/recipes/full-save' : `/recipes/${this.recipeId}/full-save`;
