@@ -21,6 +21,8 @@ _MIGRATIONS = [
     "ALTER TABLE recipes ADD COLUMN rendimento_unidades INTEGER DEFAULT 1",
     "ALTER TABLE recipes ADD COLUMN peso_porcao_g REAL DEFAULT 0.0",
     "ALTER TABLE bom_items ADD COLUMN display_unit TEXT DEFAULT ''",
+    "ALTER TABLE recipes ADD COLUMN perda_desidratacao_pct REAL DEFAULT 0.0",
+    "ALTER TABLE recipes ADD COLUMN markup_distribuicao REAL DEFAULT 0.0",
 ]
 with engine.connect() as _conn:
     for _sql in _MIGRATIONS:
@@ -176,10 +178,12 @@ def _man_row(m: models.IngredientManufacturer) -> str:
     return (
         f'<div id="man-{m.id}" class="item-row flex items-center gap-2 p-2 rounded-lg"'
         f' style="background:var(--card);border:1px solid var(--border)"'
-        f' x-data="{{editing:false,b:\'{b}\',y:{m.yield_percentage},q:{m.quality_score}}}">'
+        f' x-data="{{editing:false,b:\'{b}\',y:{m.yield_percentage},q:{m.quality_score},ingId:\'{m.ingredient_id}\','
+        f'ingName(){{return(window.ingredientNames||{{}})[+this.ingId]||\'{ing_name}\';}}}}"'
+        f' x-init="$nextTick(()=>{{const s=$el.querySelector(\'select.ing-picker\');if(s){{const nm=window.ingredientNames||{{}};Object.keys(nm).forEach(k=>{{const o=document.createElement(\'option\');o.value=k;o.textContent=nm[k];if(k==ingId)o.selected=true;s.appendChild(o);}});}}}}">'
         f'<div x-show="!editing" class="flex-1 flex items-center justify-between min-h-[44px]">'
         f'  <span class="text-sm text-white"><span x-text="b"></span>'
-        f'    <span class="text-gray-500 text-xs ml-1">({ing_name} · rend. <span x-text="y"></span>%)</span></span>'
+        f'    <span class="text-gray-500 text-xs ml-1">(<span x-text="ingName()"></span> · rend. <span x-text="y"></span>%)</span></span>'
         f'  <div class="flex gap-1">'
         f'    <button @click="editing=true" class="icon-btn hover:text-blue-400">✏️</button>'
         f'    <button hx-delete="/manufacturers/{m.id}" hx-target="#man-{m.id}" hx-swap="outerHTML"'
@@ -188,10 +192,11 @@ def _man_row(m: models.IngredientManufacturer) -> str:
         f'  </div>'
         f'</div>'
         f'<div x-show="editing" class="flex-1 flex flex-wrap items-center gap-2 min-h-[44px]">'
+        f'  <select x-model="ingId" class="field w-full text-sm ing-picker"></select>'
         f'  <input x-model="b" class="field flex-1 min-w-[120px] text-sm" placeholder="Marca" />'
         f'  <input x-model="y" type="number" step="0.1" class="field w-20 text-sm" placeholder="Rend.%" />'
         f'  <input x-model="q" type="number" min="1" max="5" class="field w-14 text-sm" placeholder="★" />'
-        f'  <button @click="saveMan({m.id},b,y,q,$el)" class="icon-btn text-green-400 hover:text-green-300">💾</button>'
+        f'  <button @click="saveMan({m.id},b,y,q,ingId,$el)" class="icon-btn text-green-400 hover:text-green-300">💾</button>'
         f'  <button @click="editing=false" class="icon-btn hover:text-white">✕</button>'
         f'</div>'
         f'</div>'
@@ -335,6 +340,7 @@ async def update_manufacturer(
     brand_name: str = Form(...),
     yield_percentage: float = Form(100.0),
     quality_score: int = Form(5),
+    ingredient_id: int = Form(None),
     db: Session = Depends(get_db),
 ):
     m = db.query(models.IngredientManufacturer).filter_by(id=man_id).first()
@@ -343,6 +349,8 @@ async def update_manufacturer(
     m.brand_name = brand_name
     m.yield_percentage = yield_percentage
     m.quality_score = quality_score
+    if ingredient_id:
+        m.ingredient_id = ingredient_id
     db.commit()
     return HTMLResponse("")
 
@@ -612,9 +620,11 @@ async def get_recipe(recipe_id: int, db: Session = Depends(get_db)):
         "laborCost":           recipe.labor_cost,
         "energyCost":          recipe.energy_cost,
         "observacoes":         recipe.observacoes or "",
-        "rendimentoUnidades":  recipe.rendimento_unidades or 1,
-        "pesoPorcaoG":         recipe.peso_porcao_g or 0.0,
-        "sections":            sections_data,
+        "rendimentoUnidades":       recipe.rendimento_unidades or 1,
+        "pesoPorcaoG":              recipe.peso_porcao_g or 0.0,
+        "perdaDesidratacaoPct":     recipe.perda_desidratacao_pct or 0.0,
+        "markupDistribuicao":       recipe.markup_distribuicao or 0.0,
+        "sections":                 sections_data,
     }
 
 
@@ -674,8 +684,10 @@ async def update_recipe(recipe_id: int, request: Request, db: Session = Depends(
     recipe.markup              = float(body.get("markup", 1.0))
     recipe.margem_minima_pct   = float(body.get("margemMinima", 20.0))
     recipe.observacoes         = body.get("observacoes", "")
-    recipe.rendimento_unidades = int(body.get("rendimentoUnidades", 1))
-    recipe.peso_porcao_g       = float(body.get("pesoPorcaoG", 0.0))
+    recipe.rendimento_unidades     = int(body.get("rendimentoUnidades", 1))
+    recipe.peso_porcao_g           = float(body.get("pesoPorcaoG", 0.0))
+    recipe.perda_desidratacao_pct  = float(body.get("perdaDesidratacaoPct", 0.0))
+    recipe.markup_distribuicao     = float(body.get("markupDistribuicao", 0.0))
     _persist_recipe_body(body, db, recipe)
     db.commit()
     return JSONResponse({"id": recipe.id, "name": recipe.name})
@@ -693,6 +705,8 @@ async def full_save_recipe(request: Request, db: Session = Depends(get_db)):
         observacoes=body.get("observacoes", ""),
         rendimento_unidades=int(body.get("rendimentoUnidades", 1)),
         peso_porcao_g=float(body.get("pesoPorcaoG", 0.0)),
+        perda_desidratacao_pct=float(body.get("perdaDesidratacaoPct", 0.0)),
+        markup_distribuicao=float(body.get("markupDistribuicao", 0.0)),
     )
     db.add(recipe)
     db.flush()

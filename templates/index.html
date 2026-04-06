@@ -66,12 +66,12 @@
         {% for ing in ingredients %}
         <div id="ing-{{ ing.id }}" class="item-row flex items-center gap-2 p-2 rounded-lg"
              style="background:var(--card); border:1px solid var(--border)"
-             x-data="{editing:false, n:'{{ ing.name | replace("'","&#39;") }}', u:'{{ ing.unit | replace("'","&#39;") }}'}">
+             x-data="{editing:false, n:'{{ ing.name | replace("'","&#39;") }}', u:'{{ ing.unit | replace("'","&#39;") }}', cat:'{{ (ing.category or "Outros") | replace("'","&#39;") }}'}">
 
           <div x-show="!editing" class="flex-1 flex items-center justify-between min-h-[44px]">
             <span class="text-sm text-white">
               <span x-text="n"></span>
-              <span class="text-gray-500 text-xs">(<span x-text="u"></span>)</span>
+              <span class="text-gray-500 text-xs">(<span x-text="u"></span> · <span x-text="cat"></span>)</span>
             </span>
             <div class="flex gap-0.5">
               <button @click="editing=true" class="icon-btn hover:text-blue-400" title="Editar">✏️</button>
@@ -85,7 +85,12 @@
           <div x-show="editing" x-cloak class="flex-1 flex flex-wrap items-center gap-1.5">
             <input x-model="n" class="field flex-1 min-w-[100px] text-sm" placeholder="Nome" />
             <input x-model="u" class="field w-14 text-sm text-center" placeholder="un" />
-            <button @click="saveIng({{ ing.id }}, n, u, $el)" class="icon-btn text-green-400 hover:text-green-300">💾</button>
+            <select x-model="cat" class="field w-28 text-sm">
+              {% for c in ingredient_categories %}
+              <option value="{{ c }}">{{ c }}</option>
+              {% endfor %}
+            </select>
+            <button @click="saveIng({{ ing.id }}, n, u, cat, $el)" class="icon-btn text-green-400 hover:text-green-300">💾</button>
             <button @click="editing=false" class="icon-btn hover:text-white">✕</button>
           </div>
         </div>
@@ -133,13 +138,13 @@
         {% for m in manufacturers %}
         <div id="man-{{ m.id }}" class="item-row flex items-center gap-2 p-2 rounded-lg"
              style="background:var(--card); border:1px solid var(--border)"
-             x-data="{editing:false, b:'{{ m.brand_name | replace("'","&#39;") }}', y:{{ m.yield_percentage }}, q:{{ m.quality_score }}}">
+             x-data="{editing:false, b:'{{ m.brand_name | replace("'","&#39;") }}', y:{{ m.yield_percentage }}, q:{{ m.quality_score }}, ingId:'{{ m.ingredient_id }}', ingName() { return (window.ingredientNames||{})[+this.ingId]||'?'; }}">
 
           <div x-show="!editing" class="flex-1 flex items-center justify-between min-h-[44px]">
             <span class="text-sm text-white">
               <span x-text="b"></span>
               <span class="text-gray-500 text-xs">
-                · {{ m.ingredient.name }} · rend. <span x-text="y"></span>%
+                · <span x-text="ingName()"></span> · rend. <span x-text="y"></span>%
               </span>
             </span>
             <div class="flex gap-0.5">
@@ -152,10 +157,15 @@
           </div>
 
           <div x-show="editing" x-cloak class="flex-1 flex flex-wrap items-center gap-1.5">
+            <select x-model="ingId" class="field w-full text-sm">
+              {% for ing in ingredients %}
+              <option value="{{ ing.id }}">{{ ing.name }}</option>
+              {% endfor %}
+            </select>
             <input x-model="b" class="field flex-1 min-w-[100px] text-sm" placeholder="Marca" />
             <input x-model="y" type="number" step="0.1" class="field w-20 text-sm" placeholder="Rend.%" />
             <input x-model="q" type="number" min="1" max="5" class="field w-14 text-sm" placeholder="★" />
-            <button @click="saveMan({{ m.id }}, b, y, q, $el)" class="icon-btn text-green-400 hover:text-green-300">💾</button>
+            <button @click="saveMan({{ m.id }}, b, y, q, ingId, $el)" class="icon-btn text-green-400 hover:text-green-300">💾</button>
             <button @click="editing=false" class="icon-btn hover:text-white">✕</button>
           </div>
         </div>
@@ -349,7 +359,20 @@
 {% endblock %}
 
 {% block scripts %}
+<script id="index-data" type="application/json">
+{{ ingredients | map(attribute="id") | list | tojson }}
+</script>
+<script id="index-names" type="application/json">
+{{ ingredients | map(attribute="name") | list | tojson }}
+</script>
 <script>
+(function() {
+  const ids   = JSON.parse(document.getElementById('index-data').textContent);
+  const names = JSON.parse(document.getElementById('index-names').textContent);
+  window.ingredientNames = {};
+  ids.forEach((id, i) => { window.ingredientNames[id] = names[i]; });
+})();
+
 function crudApp() {
   return {
     async _put(url, body) {
@@ -366,8 +389,8 @@ function crudApp() {
       toast('Ingrediente atualizado');
     },
 
-    async saveMan(id, brand_name, yield_percentage, quality_score, btn) {
-      await this._put(`/manufacturers/${id}`, { brand_name, yield_percentage, quality_score });
+    async saveMan(id, brand_name, yield_percentage, quality_score, ingredient_id, btn) {
+      await this._put(`/manufacturers/${id}`, { brand_name, yield_percentage, quality_score, ingredient_id });
       btn.closest('[x-data]').__x.$data.editing = false;
       toast('Marca atualizada');
     },

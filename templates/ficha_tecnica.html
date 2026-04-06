@@ -12,16 +12,13 @@
 {% block content %}
 <div x-data="recipeEditor()">
 
-  <!-- Page header -->
   <div class="mb-5">
     <h1 class="text-2xl font-bold text-white">📋 Ficha Técnica</h1>
     <p class="text-gray-400 text-sm mt-0.5">Engenharia de Receitas e Custos</p>
   </div>
 
-  <!-- ── Recipe picker — always visible, server-rendered options ── -->
   <div class="card p-4 mb-5">
     <div class="flex flex-col sm:flex-row sm:items-end gap-3">
-
       <div class="flex-1">
         <label class="text-xs text-gray-400 block mb-1 font-medium">
           Selecionar ficha para editar
@@ -35,26 +32,14 @@
                   style="color:#f9fafb">{{ r.name }}</option>
           {% endfor %}
         </select>
-        {% if not recipes_list %}
-        <p class="text-xs text-gray-600 mt-1">Nenhuma ficha salva ainda. Crie a primeira abaixo.</p>
-        {% else %}
-        <p class="text-xs text-gray-600 mt-1">
-          {{ recipes_list | length }} ficha{{ 's' if recipes_list | length != 1 }} cadastrada{{ 's' if recipes_list | length != 1 }}.
-          Selecione uma para editar ou deixe em branco para criar nova.
-        </p>
-        {% endif %}
       </div>
 
-      <!-- Actions shown only when a recipe is loaded -->
       <div x-show="recipeId" x-cloak class="flex items-center gap-2 flex-shrink-0">
         <button @click="newRecipe()" class="btn btn-secondary btn-sm">+ Nova</button>
         <button @click="deleteRecipe()" class="btn btn-danger btn-sm">🗑️ Excluir</button>
       </div>
     </div>
-
-    <!-- Loaded indicator -->
-    <div x-show="recipeId" x-cloak
-         class="mt-3 pt-3 border-t border-gray-700 flex items-center gap-2 text-sm">
+    <div x-show="recipeId" x-cloak class="mt-3 pt-3 border-t border-gray-700 flex items-center gap-2 text-sm">
       <span class="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"></span>
       <span class="text-gray-400">Editando:</span>
       <span class="text-white font-semibold" x-text="recipeName"></span>
@@ -64,47 +49,76 @@
 
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 lg:gap-6">
 
-    <!-- ══════════════════════════════════════════════════
-         LEFT — Recipe builder  (spans 2 cols)
-    ═══════════════════════════════════════════════════ -->
     <div class="lg:col-span-2 space-y-4">
 
-      <!-- Basic info -->
-      <div class="card p-5">
+      <div class="card p-5 border-t-4 border-blue-600">
         <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wide mb-4 border-b border-gray-700 pb-2">
-          Informações da Receita
+          Informações da Receita e Rendimento
         </h2>
-        <div class="grid grid-cols-1 sm:grid-cols-5 gap-3">
-          <div class="sm:col-span-2 flex flex-col gap-1">
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+
+          <div class="col-span-2 flex flex-col gap-1">
             <label class="text-xs text-gray-400">Nome da Receita *</label>
             <input type="text" x-model="recipeName"
                    :class="nameError ? 'error' : ''"
                    @input="nameError = false"
-                   placeholder="Ex: Pastel de Belém" />
-            <p x-show="nameError" x-cloak class="text-xs text-red-400">Informe o nome da receita.</p>
+                   placeholder="Ex: Coxinha de Frango" />
           </div>
+
           <div class="flex flex-col gap-1">
-            <label class="text-xs text-gray-400">Markup (multiplicador)</label>
-            <input type="number" x-model="markup" step="0.1" min="1" />
+            <label class="text-xs text-gray-400">Rend. Total (kg/L)</label>
+            <div class="text-sm font-semibold text-white bg-slate-900 border border-slate-700 rounded-lg px-3 flex items-center min-h-[44px]">
+              <span x-text="totalRecipeYieldKg().toFixed(3) + ' kg'"></span>
+            </div>
           </div>
+
           <div class="flex flex-col gap-1">
-            <label class="text-xs text-gray-400">Margem Mínima (%)</label>
-            <input type="number" x-model="margemMinima" step="1" min="0" max="100" />
+            <label class="text-xs text-gray-400">Tamanho Porção (g)</label>
+            <input type="number" x-model="pesoPorcaoG" step="1" min="0" placeholder="Ex: 350" />
           </div>
+
           <div class="flex flex-col gap-1">
-            <label class="text-xs text-gray-400">Rendimento (unidades)</label>
-            <input type="number" x-model="rendimentoUnidades" step="1" min="1"
-                   placeholder="Ex: 12" />
+            <label class="text-xs text-gray-400">Rende (Porções)</label>
+            <template x-if="parseFloat(pesoPorcaoG) > 0">
+              <div class="text-sm font-semibold text-blue-300 bg-slate-900 border border-blue-900/50 rounded-lg px-3 flex justify-between items-center min-h-[44px]">
+                <span x-text="calculatedYield().unidades + ' un'"></span>
+                <span class="text-[10px] text-gray-400" x-show="calculatedYield().sobraG > 0">sobra <span x-text="Math.round(calculatedYield().sobraG)"></span>g</span>
+              </div>
+            </template>
+            <template x-if="!(parseFloat(pesoPorcaoG) > 0)">
+              <input type="number" x-model="rendimentoUnidades" min="1" step="1" class="text-sm" placeholder="Ex: 15" />
+            </template>
           </div>
+
           <div class="flex flex-col gap-1">
-            <label class="text-xs text-gray-400">Peso por Porção (g)</label>
-            <input type="number" x-model="pesoPorcaoG" step="1" min="0"
-                   placeholder="Ex: 85" />
+            <label class="text-xs text-gray-400" title="Perda de peso durante ultracongelamento">% Perda Desid.</label>
+            <input type="number" x-model="perdaDesidratacaoPct" step="0.1" min="0" max="30" placeholder="0" />
           </div>
+
         </div>
+
+        <!-- Proporção das seções (visível quando há ≥2 seções com rendimento) -->
+        <template x-if="sectionProportions().length > 1">
+          <div class="mt-4 pt-3 border-t border-gray-700/50">
+            <p class="text-xs text-gray-500 mb-2">Proporção das seções (pós-cocção)</p>
+            <div class="flex h-3 rounded-full overflow-hidden gap-px">
+              <template x-for="sp in sectionProportions()" :key="sp.name">
+                <div :style="'width:' + sp.pct + '%;background:' + sp.color"
+                     :title="sp.name + ': ' + sp.pct.toFixed(1) + '%'"></div>
+              </template>
+            </div>
+            <div class="flex flex-wrap gap-3 mt-2">
+              <template x-for="sp in sectionProportions()" :key="sp.name">
+                <span class="text-xs text-gray-400">
+                  <span :style="'color:' + sp.color">●</span>
+                  <span x-text="sp.name + ' ' + sp.pct.toFixed(1) + '%'"></span>
+                </span>
+              </template>
+            </div>
+          </div>
+        </template>
       </div>
 
-      <!-- Sections -->
       <template x-for="(section, sIndex) in sections" :key="sIndex">
         <div class="card p-5 section-border">
 
@@ -114,19 +128,19 @@
                    class="font-bold text-base focus:outline-none focus:ring-0 p-0"
                    placeholder="Nome da Seção (ex: Massa)" />
             <div class="flex items-center gap-2 flex-shrink-0">
-              <label class="text-xs text-gray-400 whitespace-nowrap">Rendimento pós-cocção (kg)</label>
-              <input type="number" x-model="section.yield" step="0.01" class="w-24 text-right" />
+              <label class="text-xs text-gray-400 whitespace-nowrap">Rendimento Pós-Cocção (kg) opcional</label>
+              <input type="number" x-model="section.yield" step="0.01" class="w-24 text-right" placeholder="Auto" />
             </div>
           </div>
 
-          <!-- MOBILE: card-per-item -->
+          <!-- Mobile cards -->
           <div class="sm:hidden space-y-3">
             <template x-for="(item, iIndex) in section.items" :key="'m-'+sIndex+'-'+iIndex">
               <div class="rounded-xl p-3 space-y-2" style="background:var(--bg)">
                 <div class="flex gap-2 items-end">
                   <div class="flex-1 flex flex-col gap-1">
                     <label class="text-xs text-gray-500">Insumo</label>
-                    <select @change="item.ingredientId = $event.target.value ? parseInt($event.target.value) : ''; updateItemIngredient(item)" class="ts-ingredient text-sm">
+                    <select @change="item.ingredientId = $event.target.value ? parseInt($event.target.value) : ''; updateItemIngredient(item)" class="text-sm">
                       <option value="">Selecione...</option>
                       <template x-for="ing in ingredients" :key="ing.id">
                         <option :value="ing.id" :selected="item.ingredientId == ing.id" x-text="ing.name"></option>
@@ -140,15 +154,14 @@
 
                 <div class="flex flex-col gap-1">
                   <label class="text-xs text-gray-500">
-                    Marca
-                    <span x-show="item.manufacturerId" class="text-blue-400 ml-1 text-xs">— FC e preço aplicados</span>
+                    Marca <span x-show="item.manufacturerId" class="text-blue-400 ml-1 text-xs">— FC e preço aplicados</span>
                   </label>
                   <select @change="item.manufacturerId = $event.target.value ? parseInt($event.target.value) : ''; updateItemBrand(item)"
                           :disabled="!item.availableBrands.length" class="text-sm">
                     <option value="">— sem marca específica —</option>
                     <template x-for="b in item.availableBrands" :key="b.id">
                       <option :value="b.id" :selected="item.manufacturerId == b.id"
-                              x-text="b.brand_name + ' · FC≈' + b.suggested_fc + ' · R$' + b.last_price.toFixed(2)">
+                              x-text="b.brand_name + ' · R$' + b.last_price.toFixed(2)">
                       </option>
                     </template>
                   </select>
@@ -157,11 +170,10 @@
                 <div class="grid grid-cols-3 gap-2">
                   <div class="flex flex-col gap-1">
                     <label class="text-xs text-gray-500">Quantidade</label>
-                    <div class="flex overflow-hidden"
-                         style="background:var(--bg);border:1px solid var(--border);border-radius:.5rem">
+                    <div class="flex overflow-hidden" style="background:var(--bg);border:1px solid var(--border);border-radius:.5rem">
                       <input type="number" x-model="item.qty" step="0.001"
                              style="border:none;background:transparent;min-width:0;flex:1;padding:.35rem .4rem;font-size:.875rem" />
-                      <select x-model="item.displayUnit"
+                      <select :value="item.displayUnit" @change="changeUnit(item, $event.target.value)"
                               style="border:none;background:transparent;border-left:1px solid var(--border);padding:.35rem .25rem;font-size:.7rem;color:#9ca3af;cursor:pointer;max-width:46px">
                         <template x-for="opt in unitOptions(item.baseUnit)" :key="opt">
                           <option :value="opt" x-text="opt" style="background:#0f172a;color:#f9fafb"></option>
@@ -187,15 +199,13 @@
             </template>
           </div>
 
-          <!-- DESKTOP: table -->
+          <!-- Desktop table -->
           <div class="hidden sm:block overflow-x-auto">
             <table class="w-full text-sm text-left">
               <thead class="text-xs text-gray-500">
                 <tr>
                   <th class="pb-2 pr-2 font-medium">Insumo</th>
-                  <th class="pb-2 pr-2 font-medium">
-                    Marca <span class="text-gray-600 font-normal">(auto FC + preço)</span>
-                  </th>
+                  <th class="pb-2 pr-2 font-medium">Marca</th>
                   <th class="pb-2 pr-2 font-medium">Quantidade</th>
                   <th class="pb-2 pr-2 font-medium">FC</th>
                   <th class="pb-2 pr-2 font-medium">FCoc</th>
@@ -216,21 +226,20 @@
                     </td>
                     <td class="py-2 pr-2">
                       <select @change="item.manufacturerId = $event.target.value ? parseInt($event.target.value) : ''; updateItemBrand(item)"
-                              class="text-sm min-w-[160px]"
+                              class="text-sm min-w-[150px]"
                               :disabled="!item.availableBrands.length">
                         <option value="">— sem marca —</option>
                         <template x-for="b in item.availableBrands" :key="b.id">
                           <option :value="b.id" :selected="item.manufacturerId == b.id"
-                                  x-text="b.brand_name + ' (FC' + b.suggested_fc + ')'"></option>
+                                  x-text="b.brand_name + ' (R$' + b.last_price.toFixed(2) + ')'"></option>
                         </template>
                       </select>
                     </td>
                     <td class="py-2 pr-2">
-                      <div class="flex overflow-hidden"
-                           style="background:var(--bg);border:1px solid var(--border);border-radius:.5rem;width:6.5rem">
+                      <div class="flex overflow-hidden" style="background:var(--bg);border:1px solid var(--border);border-radius:.5rem;width:7.5rem">
                         <input type="number" x-model="item.qty" step="0.001"
-                               style="border:none;background:transparent;width:3.5rem;padding:.35rem .4rem;font-size:.875rem" />
-                        <select x-model="item.displayUnit"
+                               style="border:none;background:transparent;width:4.2rem;padding:.35rem .4rem;font-size:.875rem" />
+                        <select :value="item.displayUnit" @change="changeUnit(item, $event.target.value)"
                                 style="border:none;background:transparent;border-left:1px solid var(--border);padding:.35rem .2rem;font-size:.7rem;color:#9ca3af;cursor:pointer;flex:1">
                           <template x-for="opt in unitOptions(item.baseUnit)" :key="opt">
                             <option :value="opt" x-text="opt" style="background:#0f172a;color:#f9fafb"></option>
@@ -238,11 +247,11 @@
                         </select>
                       </div>
                     </td>
-                    <td class="py-2 pr-2"><input type="number" x-model="item.fc"   step="0.01"  class="w-16" /></td>
-                    <td class="py-2 pr-2"><input type="number" x-model="item.fcoc" step="0.01"  class="w-16" /></td>
+                    <td class="py-2 pr-2"><input type="number" x-model="item.fc"   step="0.01" class="w-16" /></td>
+                    <td class="py-2 pr-2"><input type="number" x-model="item.fcoc" step="0.01" class="w-16" /></td>
                     <td class="py-2 text-right text-gray-300 whitespace-nowrap"
                         x-text="'R$ ' + calcItem(item).toFixed(4)"></td>
-                    <td class="py-2 pl-1">
+                    <td class="py-2 pl-1 text-right">
                       <button @click="removeItem(sIndex, iIndex)"
                               class="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-900/30 rounded">✕</button>
                     </td>
@@ -252,24 +261,9 @@
             </table>
           </div>
 
-          <button @click="addItem(sIndex)"
-                  class="btn btn-secondary btn-sm mt-4">
+          <button @click="addItem(sIndex)" class="btn btn-secondary btn-sm mt-4">
             + Adicionar Insumo
           </button>
-
-          <!-- Forma de fazer -->
-          <div class="mt-5 pt-4 border-t border-gray-700/60">
-            <label class="flex items-center gap-2 text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
-              <span class="text-base">📋</span> Forma de Fazer
-            </label>
-            <textarea x-model="section.instrucoes" rows="4"
-                      placeholder="Descreva o modo de preparo desta seção: temperatura, tempo, técnica, pontos de atenção…"
-                      style="background:var(--bg)"
-                      class="w-full border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200
-                             placeholder-gray-600 focus:outline-none focus:border-blue-500
-                             focus:ring-1 focus:ring-blue-500/40 resize-y leading-relaxed"
-            ></textarea>
-          </div>
         </div>
       </template>
 
@@ -279,28 +273,20 @@
         + Adicionar Nova Seção (Massa, Recheio, Cobertura…)
       </button>
 
-      <!-- Observações gerais -->
-      <div class="card p-5">
+      <div class="card p-5 mt-4">
         <label class="flex items-center gap-2 text-sm font-semibold mb-3 border-b border-gray-700 pb-2">
-          <span>🗒️</span> Observações Gerais
+          <span>🗒️</span> Observações e Modo de Preparo
         </label>
-        <textarea x-model="observacoes" rows="5"
-                  placeholder="Equipamentos utilizados, configurações de forno/fritadeira, dicas de conservação, rendimento esperado, validade, embalagem recomendada…"
+        <textarea x-model="observacoes" rows="4"
+                  placeholder="Equipamentos, temperaturas, técnicas..."
                   style="background:var(--bg)"
-                  class="w-full border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200
-                         placeholder-gray-600 focus:outline-none focus:border-blue-500
-                         focus:ring-1 focus:ring-blue-500/40 resize-y leading-relaxed"
-        ></textarea>
-        <p class="text-xs text-gray-600 mt-1.5">Este campo é salvo junto com a ficha e aparece na impressão.</p>
+                  class="w-full border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200"></textarea>
       </div>
     </div>
 
-    <!-- ══════════════════════════════════════════════════
-         RIGHT — Sticky sidebar
-    ═══════════════════════════════════════════════════ -->
+    <!-- Sidebar -->
     <div class="space-y-4 lg:sticky lg:top-20 lg:self-start">
 
-      <!-- Operational costs -->
       <div class="card p-5">
         <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wide mb-4 border-b border-gray-700 pb-2">
           Custos Operacionais
@@ -314,10 +300,24 @@
             <label class="text-sm text-gray-400 flex-1">Energia / Gás (R$)</label>
             <input type="number" x-model="energyCost" step="0.01" class="w-28 text-right" />
           </div>
+          <div class="flex justify-between items-center gap-3">
+            <label class="text-sm text-gray-400 flex-1">Margem Mínima (%)</label>
+            <input type="number" x-model="margemMinima" step="1" min="0" class="w-28 text-right" />
+          </div>
+          <div class="border-t border-gray-700 pt-3 mt-1">
+            <p class="text-xs text-gray-500 mb-2 uppercase tracking-wide font-semibold">Markup por Canal</p>
+            <div class="flex justify-between items-center gap-3">
+              <label class="text-sm text-gray-400 flex-1">Venda Direta (x)</label>
+              <input type="number" x-model="markup" step="0.1" min="1" class="w-28 text-right" />
+            </div>
+            <div class="flex justify-between items-center gap-3 mt-2">
+              <label class="text-sm text-gray-400 flex-1">Distribuição (x)</label>
+              <input type="number" x-model="markupDistribuicao" step="0.1" min="0" placeholder="—" class="w-28 text-right" />
+            </div>
+          </div>
         </div>
       </div>
 
-      <!-- Financial summary -->
       <div class="card p-5">
         <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wide mb-4 border-b border-gray-700 pb-2">
           Resumo Financeiro
@@ -328,33 +328,37 @@
             <span x-text="'R$ ' + totalIngCost().toFixed(2)"></span>
           </div>
           <div class="flex justify-between text-sm">
-            <span class="text-gray-400">Custo Total</span>
+            <span class="text-gray-400">Custo Total Lote</span>
             <span x-text="'R$ ' + totalCost().toFixed(2)"></span>
           </div>
-          <div class="flex justify-between text-lg font-bold text-white border-t border-gray-700 pt-3">
-            <span>Preço Sugerido</span>
-            <span class="text-blue-400" x-text="'R$ ' + suggestedPrice().toFixed(2)"></span>
-          </div>
-
-          <!-- Per-portion block — only shown when rendimentoUnidades > 1 -->
-          <template x-if="parseInt(rendimentoUnidades) > 1">
-            <div class="border-t border-gray-700 pt-3 space-y-2">
-              <p class="text-xs text-gray-500 uppercase tracking-wide font-semibold">Por Porção
-                <span class="font-normal" x-text="'(' + rendimentoUnidades + ' un' + (pesoPorcaoG > 0 ? ' · ' + pesoPorcaoG + 'g' : '') + ')'"></span>
-              </p>
-              <div class="flex justify-between text-sm">
-                <span class="text-gray-400">Custo por Porção</span>
-                <span class="text-gray-200" x-text="'R$ ' + costPerUnit().toFixed(4)"></span>
-              </div>
-              <div class="flex justify-between text-sm font-semibold">
-                <span class="text-gray-300">Preço por Porção</span>
-                <span class="text-blue-300" x-text="'R$ ' + pricePerUnit().toFixed(2)"></span>
-              </div>
+          <template x-if="parseFloat(perdaDesidratacaoPct) > 0">
+            <div class="flex justify-between text-xs text-yellow-500/80">
+              <span>— Perda desidratação (<span x-text="perdaDesidratacaoPct"></span>%)</span>
+              <span x-text="'−' + (totalRecipeYieldKg() * parseFloat(perdaDesidratacaoPct) / 100 * 1000).toFixed(0) + 'g'"></span>
             </div>
           </template>
 
-          <!-- Traffic-light margin indicator -->
-          <div class="p-4 rounded-xl"
+          <div class="border-t border-gray-700 pt-3 mt-3 space-y-2">
+            <p class="text-xs text-gray-500 uppercase tracking-wide font-semibold">Por Porção
+              <span class="font-normal" x-text="'(' + _activeUnits() + ' un)'"></span>
+            </p>
+            <div class="flex justify-between text-sm">
+              <span class="text-gray-400">Custo por Porção</span>
+              <span class="text-gray-200" x-text="'R$ ' + costPerUnit().toFixed(4)"></span>
+            </div>
+            <div class="flex justify-between text-sm font-semibold">
+              <span class="text-gray-300">💰 Venda Direta</span>
+              <span class="text-blue-300" x-text="'R$ ' + pricePerUnit().toFixed(2)"></span>
+            </div>
+            <template x-if="parseFloat(markupDistribuicao) > 0">
+              <div class="flex justify-between text-sm font-semibold">
+                <span class="text-gray-300">🚛 Distribuição</span>
+                <span class="text-purple-300" x-text="'R$ ' + priceDistribuicao().toFixed(2)"></span>
+              </div>
+            </template>
+          </div>
+
+          <div class="p-4 rounded-xl mt-4"
                :class="{
                  'bg-green-500/10':  profitMargin() >= margemMinima,
                  'bg-yellow-500/10': profitMargin() >= margemMinima * 0.8 && profitMargin() < margemMinima,
@@ -370,85 +374,74 @@
                     }"
                     x-text="profitMargin().toFixed(1) + '%'"></span>
             </div>
-            <p class="text-xs text-gray-500 mt-1"
-               x-text="profitMargin() >= margemMinima
-                 ? 'Acima do limite mínimo (' + margemMinima + '%)'
-                 : 'Abaixo do limite de ' + margemMinima + '%'">
-            </p>
           </div>
         </div>
-      </div>
-
-      <!-- Save button + status -->
-      <div x-show="saveStatus" x-cloak
-           class="p-3 rounded-lg text-sm text-center card"
-           :class="saveOk ? 'border-green-800/40 text-green-300' : 'border-red-800/40 text-red-300'"
-           x-text="saveStatus">
       </div>
 
       <button @click="saveRecipe()" :disabled="saving"
               class="btn btn-primary btn-full">
         <span x-text="saving ? 'Salvando…' : (recipeId ? '💾 Atualizar Ficha' : '💾 Salvar Nova Ficha')"></span>
       </button>
-    </div>
 
+    </div>
   </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
+<script id="ficha-data" type="application/json">
+{"ingredients": {{ ingredients_json | tojson }}, "recipes": {{ recipes_list | tojson }}}
+</script>
 <script>
 // @ts-nocheck
 function recipeEditor() {
+  const _d = JSON.parse(document.getElementById('ficha-data').textContent);
   return {
-    // ── Ingredient catalogue (injected server-side) ───────────────
-    ingredients: {{ ingredients_json | tojson }},
-
-    // ── Recipe identity ──────────────────────────────────────────
+    ingredients: _d.ingredients,
     recipeId:     null,
-    savedRecipes: {{ recipes_list | tojson }},  // server-rendered, no fetch needed
+    savedRecipes: _d.recipes,
 
-    // ── Form state ───────────────────────────────────────────────
-    recipeName:          '',
-    nameError:           false,
-    markup:              2.5,
-    margemMinima:        20,
-    laborCost:           0,
-    energyCost:          0,
-    observacoes:         '',
-    rendimentoUnidades:  1,
-    pesoPorcaoG:         0,
-    saving:              false,
-    saveStatus:          '',
-    saveOk:              true,
-    sections:            [{ name: 'Massa', yield: 1.0, instrucoes: '', items: [] }],
+    recipeName:         '',
+    nameError:          false,
+    markup:             2.5,
+    margemMinima:       20,
+    laborCost:          0,
+    energyCost:         0,
+    observacoes:        '',
+    rendimentoUnidades:    1,
+    pesoPorcaoG:           0,
+    perdaDesidratacaoPct:  0,
+    markupDistribuicao:    0,
+    saving:                false,
+    sections:           [{ name: 'Massa', yield: 0, instrucoes: '', items: [] }],
 
-    init() {},   // nothing async needed at startup
-
-    // ── Load a saved recipe by id ─────────────────────────────────
+    // ── Load existing recipe ──────────────────────────────────────
     async loadRecipeById(id) {
       if (!id) { this.newRecipe(); return; }
       try {
         const r = await fetch(`/api/recipes/${id}`);
         if (!r.ok) throw new Error('Receita não encontrada');
         const data = await r.json();
-        this.recipeId          = data.id;
-        this.recipeName        = data.recipeName;
-        this.markup            = data.markup;
-        this.margemMinima      = data.margemMinima;
-        this.laborCost         = data.laborCost;
-        this.energyCost        = data.energyCost;
-        this.observacoes       = data.observacoes;
-        this.rendimentoUnidades = data.rendimentoUnidades || 1;
-        this.pesoPorcaoG       = data.pesoPorcaoG || 0;
-        // Hydrate baseUnit/displayUnit and convert qty from DB base unit to display unit
+        this.recipeId           = data.id;
+        this.recipeName         = data.recipeName;
+        this.markup             = data.markup;
+        this.margemMinima       = data.margemMinima;
+        this.laborCost          = data.laborCost;
+        this.energyCost         = data.energyCost;
+        this.observacoes        = data.observacoes;
+        this.rendimentoUnidades   = data.rendimentoUnidades || 1;
+        this.pesoPorcaoG          = data.pesoPorcaoG || 0;
+        this.perdaDesidratacaoPct = data.perdaDesidratacaoPct || 0;
+        this.markupDistribuicao   = data.markupDistribuicao || 0;
+
+        // Carrega seções e converte qtds do banco (kg/L) para a unidade de tela salva (g/ml)
         this.sections = data.sections.map(sec => ({
           ...sec,
           items: sec.items.map(item => {
-            const ing = this.ingredients.find(i => i.id == item.ingredientId);
+            const ing  = this.ingredients.find(i => i.id == item.ingredientId);
             const base = ing ? (ing.unit || 'kg').toLowerCase() : 'kg';
 
-            // Use saved displayUnit if present; fallback to smart default for old records
+            // Usa displayUnit salvo; fallback inteligente para receitas antigas
             let disp = item.displayUnit;
             if (!disp) {
               if (base === 'kg') disp = 'g';
@@ -456,41 +449,32 @@ function recipeEditor() {
               else disp = base;
             }
 
-            // Convert qty stored in base unit (kg/L) back to display unit (g/ml) for the screen
+            // Converte qty do banco (base) para tela (display)
             let displayQty = item.qty;
-            if (base === 'kg' && disp === 'g')   displayQty = item.qty * 1000;
-            if (base === 'l'  && disp === 'ml')  displayQty = item.qty * 1000;
-            if (base === 'g'  && disp === 'kg')  displayQty = item.qty / 1000;
-            if (base === 'ml' && disp === 'l')   displayQty = item.qty / 1000;
+            if ((base === 'kg') && disp === 'g')   displayQty = item.qty * 1000;
+            if ((base === 'l')  && disp === 'ml')  displayQty = item.qty * 1000;
+            if (base === 'g'   && disp === 'kg')   displayQty = item.qty / 1000;
+            if (base === 'ml'  && disp === 'l')    displayQty = item.qty / 1000;
 
             return { ...item, baseUnit: base, displayUnit: disp, qty: displayQty };
           }),
         }));
-        this.saveStatus   = '';
-        this.nameError    = false;
+        this.nameError = false;
         toast(`"${data.recipeName}" carregada`);
       } catch (err) {
         toast(err.message, 'error');
       }
     },
 
-    // ── Reset to blank new recipe ─────────────────────────────────
     newRecipe() {
-      this.recipeId           = null;
-      this.recipeName         = '';
-      this.markup             = 2.5;
-      this.margemMinima       = 20;
-      this.laborCost          = 0;
-      this.energyCost         = 0;
-      this.observacoes        = '';
-      this.rendimentoUnidades = 1;
-      this.pesoPorcaoG        = 0;
-      this.sections           = [{ name: 'Massa', yield: 1.0, instrucoes: '', items: [] }];
-      this.saveStatus         = '';
-      this.nameError          = false;
+      this.recipeId = null; this.recipeName = ''; this.markup = 2.5;
+      this.margemMinima = 20; this.laborCost = 0; this.energyCost = 0;
+      this.observacoes = ''; this.rendimentoUnidades = 1; this.pesoPorcaoG = 0;
+      this.perdaDesidratacaoPct = 0; this.markupDistribuicao = 0;
+      this.sections = [{ name: 'Massa', yield: 0, instrucoes: '', items: [] }];
+      this.nameError = false;
     },
 
-    // ── Delete current recipe ─────────────────────────────────────
     async deleteRecipe() {
       if (!this.recipeId) return;
       if (!confirm(`Excluir "${this.recipeName}"? Esta ação não pode ser desfeita.`)) return;
@@ -507,7 +491,7 @@ function recipeEditor() {
 
     // ── BOM helpers ───────────────────────────────────────────────
     addSection() {
-      this.sections.push({ name: 'Nova Seção', yield: 1.0, instrucoes: '', items: [] });
+      this.sections.push({ name: 'Nova Seção', yield: 0, instrucoes: '', items: [] });
     },
 
     addItem(sIndex) {
@@ -527,12 +511,10 @@ function recipeEditor() {
       item.manufacturerId = '';
       item.availableBrands = [];
 
-      // Auto-set unit from ingredient catalogue
       if (ing && ing.unit) {
         item.baseUnit = ing.unit.toLowerCase();
-        // Default displayUnit: prefer smaller unit so users type whole numbers
         if (item.baseUnit === 'kg') item.displayUnit = 'g';
-        else if (item.baseUnit === 'l')  item.displayUnit = 'ml';
+        else if (item.baseUnit === 'l') item.displayUnit = 'ml';
         else item.displayUnit = item.baseUnit;
       }
 
@@ -550,7 +532,7 @@ function recipeEditor() {
       if (brand.last_price > 0) item.price = brand.last_price;
     },
 
-    // ── Unit conversion helpers ───────────────────────────────────
+    // ── Conversão de unidade com atualização mágica do número ────
     unitOptions(baseUnit) {
       const u = (baseUnit || 'kg').toLowerCase();
       if (u === 'kg' || u === 'g')  return ['kg', 'g'];
@@ -558,19 +540,80 @@ function recipeEditor() {
       return [baseUnit || 'un'];
     },
 
-    // Convert displayUnit qty back to baseUnit qty for cost math
+    changeUnit(item, newDisp) {
+      const oldDisp = item.displayUnit || item.baseUnit;
+      const qty     = parseFloat(item.qty) || 0;
+
+      // 1. Converte qty atual (tela) → base (kg/L)
+      let inBase = qty;
+      if (oldDisp === 'g'  || oldDisp === 'g')  inBase = qty / 1000;
+      if (oldDisp === 'ml' || oldDisp === 'ml') inBase = qty / 1000;
+      if (oldDisp === 'kg' || oldDisp === 'L')  inBase = qty;
+
+      // Recomputa corretamente pelo mapeamento explícito
+      const base = (item.baseUnit || 'kg').toLowerCase();
+      if (base === 'kg' && oldDisp === 'g')   inBase = qty / 1000;
+      if (base === 'kg' && oldDisp === 'kg')  inBase = qty;
+      if (base === 'l'  && oldDisp === 'ml')  inBase = qty / 1000;
+      if (base === 'l'  && oldDisp === 'L')   inBase = qty;
+
+      // 2. Converte base → nova unidade de tela
+      let newQty = inBase;
+      if (base === 'kg' && newDisp === 'g')   newQty = inBase * 1000;
+      if (base === 'kg' && newDisp === 'kg')  newQty = inBase;
+      if (base === 'l'  && newDisp === 'ml')  newQty = inBase * 1000;
+      if (base === 'l'  && newDisp === 'L')   newQty = inBase;
+
+      item.qty         = newQty === 0 ? '' : Number(newQty.toFixed(3));
+      item.displayUnit = newDisp;
+    },
+
+    // Converte qty de tela → base para salvar no banco
     _qtyInBase(item) {
-      let qty = parseFloat(item.qty) || 0;
-      const base = (item.baseUnit || '').toLowerCase();
+      const qty  = parseFloat(item.qty) || 0;
+      const base = (item.baseUnit    || '').toLowerCase();
       const disp = (item.displayUnit || '').toLowerCase();
-      if (base === 'kg' && disp === 'g')  return qty / 1000;
-      if (base === 'l'  && disp === 'ml') return qty / 1000;
-      if (base === 'g'  && disp === 'kg') return qty * 1000;
-      if (base === 'ml' && disp === 'l')  return qty * 1000;
+      if (base === 'kg' && disp === 'g')   return qty / 1000;
+      if (base === 'l'  && disp === 'ml')  return qty / 1000;
+      if (base === 'g'  && disp === 'kg')  return qty * 1000;
+      if (base === 'ml' && disp === 'l')   return qty * 1000;
       return qty;
     },
 
-    // ── Cost calculations ─────────────────────────────────────────
+    // ── Rendimento inteligente ────────────────────────────────────
+    totalRecipeYieldKg() {
+      // Prioridade 1: rendimento pós-cocção explícito nas seções
+      const explicit = this.sections.reduce((s, sec) => s + (parseFloat(sec.yield) || 0), 0);
+      if (explicit > 0) return explicit;
+      // Fallback: soma peso líquido dos ingredientes descontando FCoc
+      return this.sections.reduce((s, sec) =>
+        s + sec.items.reduce((ss, item) => ss + (this._qtyInBase(item) / (parseFloat(item.fcoc) || 1)), 0), 0);
+    },
+
+    calculatedYield() {
+      const rawKg   = this.totalRecipeYieldKg();
+      const desid   = parseFloat(this.perdaDesidratacaoPct) || 0;
+      const totalKg = rawKg * (1 - desid / 100); // effective weight after freezer loss
+      const porcaoKg = (parseFloat(this.pesoPorcaoG) || 0) / 1000;
+      if (porcaoKg > 0 && totalKg > 0) {
+        const unidades = Math.floor(totalKg / porcaoKg);
+        return { unidades, sobraG: (totalKg - unidades * porcaoKg) * 1000 };
+      }
+      return { unidades: parseInt(this.rendimentoUnidades) || 1, sobraG: 0 };
+    },
+
+    // Proporção visual das seções (só seções com yield > 0)
+    sectionProportions() {
+      const COLORS = ['#3b82f6','#f97316','#22c55e','#a855f7','#eab308','#ec4899','#06b6d4'];
+      const withYield = this.sections
+        .map((s, i) => ({ name: s.name || `Seção ${i+1}`, kg: parseFloat(s.yield) || 0, color: COLORS[i % COLORS.length] }))
+        .filter(s => s.kg > 0);
+      const total = withYield.reduce((a, s) => a + s.kg, 0);
+      if (!total) return [];
+      return withYield.map(s => ({ ...s, pct: (s.kg / total) * 100 }));
+    },
+
+    // ── Financeiro ────────────────────────────────────────────────
     calcItem(item) {
       const fcoc = parseFloat(item.fcoc) || 1;
       return ((parseFloat(item.price) * parseFloat(item.fc)) / fcoc) * this._qtyInBase(item);
@@ -578,8 +621,7 @@ function recipeEditor() {
 
     totalIngCost() {
       return this.sections.reduce(
-        (s, sec) => s + sec.items.reduce((ss, i) => ss + this.calcItem(i), 0), 0
-      );
+        (s, sec) => s + sec.items.reduce((ss, i) => ss + this.calcItem(i), 0), 0);
     },
 
     totalCost() {
@@ -592,75 +634,62 @@ function recipeEditor() {
 
     profitMargin() {
       const p = this.suggestedPrice();
-      if (p <= 0) return 0;
-      return ((p - this.totalCost()) / p) * 100;
+      return p > 0 ? ((p - this.totalCost()) / p) * 100 : 0;
     },
 
-    costPerUnit() {
-      const n = parseInt(this.rendimentoUnidades) || 1;
-      return this.totalCost() / n;
+    _activeUnits() {
+      return parseFloat(this.pesoPorcaoG) > 0
+        ? this.calculatedYield().unidades
+        : (parseInt(this.rendimentoUnidades) || 1);
     },
 
-    pricePerUnit() {
-      const n = parseInt(this.rendimentoUnidades) || 1;
-      return this.suggestedPrice() / n;
+    costPerUnit()         { return this.totalCost()      / (this._activeUnits() || 1); },
+    pricePerUnit()        { return this.suggestedPrice() / (this._activeUnits() || 1); },
+    priceDistribuicao()   {
+      const md = parseFloat(this.markupDistribuicao) || 0;
+      return md > 0 ? this.totalCost() * md / (this._activeUnits() || 1) : 0;
     },
 
-    // ── Save / Update ─────────────────────────────────────────────
+    // ── Salvar ────────────────────────────────────────────────────
     async saveRecipe() {
       if (!this.recipeName.trim()) {
-        this.nameError  = true;
-        this.saveOk     = false;
-        this.saveStatus = 'Informe o nome da receita antes de salvar.';
-        toast('Informe o nome da receita', 'error');
-        return;
+        this.nameError = true; toast('Informe o nome da receita', 'error'); return;
       }
-      this.saving     = true;
-      this.saveStatus = '';
+      this.saving = true;
       const payload = {
         recipeName: this.recipeName, markup: this.markup,
         margemMinima: this.margemMinima, laborCost: this.laborCost,
         energyCost: this.energyCost, observacoes: this.observacoes,
-        rendimentoUnidades: parseInt(this.rendimentoUnidades) || 1,
-        pesoPorcaoG: parseFloat(this.pesoPorcaoG) || 0,
-        // Convert display qty (g/ml) back to base unit (kg/L) before sending to DB
+        rendimentoUnidades:   this._activeUnits(),
+        pesoPorcaoG:          parseFloat(this.pesoPorcaoG) || 0,
+        perdaDesidratacaoPct: parseFloat(this.perdaDesidratacaoPct) || 0,
+        markupDistribuicao:   parseFloat(this.markupDistribuicao) || 0,
+        // Banco recebe sempre kg/L; displayUnit preservado para reabrir corretamente
         sections: this.sections.map(sec => ({
           ...sec,
           items: sec.items.map(item => ({
             ...item,
-            qty: this._qtyInBase(item),
+            qty:         this._qtyInBase(item),
+            displayUnit: item.displayUnit,
           })),
         })),
       };
-      const isNew = !this.recipeId;
+      const isNew  = !this.recipeId;
       const url    = isNew ? '/recipes/full-save' : `/recipes/${this.recipeId}/full-save`;
       const method = isNew ? 'POST' : 'PUT';
       try {
         const resp = await fetch(url, {
-          method,
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+          method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
         });
         const data = await resp.json();
         if (resp.ok) {
           this.recipeId = data.id;
-          this.saveOk     = true;
-          this.saveStatus = `"${data.name}" ${isNew ? 'salva' : 'atualizada'}! (ID ${data.id})`;
           toast(`"${data.name}" ${isNew ? 'salva' : 'atualizada'} com sucesso!`);
-          // Keep savedRecipes list up-to-date
           const idx = this.savedRecipes.findIndex(r => r.id === data.id);
           if (idx >= 0) this.savedRecipes[idx].name = data.name;
           else          this.savedRecipes.push({ id: data.id, name: data.name });
-        } else {
-          throw new Error(data.detail || 'Erro desconhecido');
-        }
-      } catch (err) {
-        this.saveOk     = false;
-        this.saveStatus = err.message;
-        toast(err.message, 'error');
-      } finally {
-        this.saving = false;
-      }
+        } else { throw new Error(data.detail || 'Erro desconhecido'); }
+      } catch (err) { toast(err.message, 'error'); } finally { this.saving = false; }
     },
   };
 }

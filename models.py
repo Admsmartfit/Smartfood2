@@ -75,6 +75,8 @@ class Recipe(Base):
     observacoes = Column(Text, default="")  # Equipamentos, configurações, notas gerais
     rendimento_unidades = Column(Integer, default=1)
     peso_porcao_g = Column(Float, default=0.0)
+    perda_desidratacao_pct = Column(Float, default=0.0)   # % weight loss in freezer
+    markup_distribuicao = Column(Float, default=0.0)      # markup for distribution channel
 
     sections = relationship("RecipeSection", back_populates="recipe")
     batches = relationship("ProductionBatch", back_populates="recipe")
