@@ -963,14 +963,34 @@ async def generate_shopping_list(request: Request, db: Session = Depends(get_db)
         )
 
     # Auto-save this shopping list so /precos can cross-reference it
-    s_list = models.ShoppingList(
-        name=f"Lista gerada em {datetime.utcnow().strftime('%d/%m/%Y às %H:%M')}"
-    )
-    db.add(s_list)
-    db.flush()
-    for ing_id, data in agg.items():
-        db.add(models.ShoppingListItem(list_id=s_list.id, ingredient_id=ing_id, qty=data["qty"]))
-    db.commit()
+    save_banner = ""
+    try:
+        s_list = models.ShoppingList(
+            name=f"Lista gerada em {datetime.utcnow().strftime('%d/%m/%Y às %H:%M')}"
+        )
+        db.add(s_list)
+        db.flush()
+        for ing_id, data in agg.items():
+            db.add(models.ShoppingListItem(
+                list_id=s_list.id, ingredient_id=ing_id, qty=data["qty"]
+            ))
+        db.commit()
+        save_banner = (
+            f'<div class="mb-4 px-3 py-2 rounded-lg text-xs text-green-300 flex items-center gap-2"'
+            f'     style="background:rgba(22,101,52,.25);border:1px solid rgba(34,197,94,.2)">'
+            f'  ✓ Lista salva automaticamente — use em <a href="/precos" class="underline text-green-200">Cotações</a>'
+            f'  para cruzar com fornecedores.'
+            f'</div>'
+        )
+    except Exception as exc:
+        db.rollback()
+        save_banner = (
+            f'<div class="mb-4 px-3 py-2 rounded-lg text-xs text-yellow-300 flex items-center gap-2"'
+            f'     style="background:rgba(120,53,15,.25);border:1px solid rgba(234,179,8,.2)">'
+            f'  ⚠ Lista gerada mas não salva no banco: {exc}. '
+            f'  Reinicie o servidor para criar as tabelas novas.'
+            f'</div>'
+        )
 
     # Group by category in a defined order
     CAT_ORDER = ["Carnes", "Vegetais", "Temperos", "Laticínios", "Carboidratos", "Embalagens", "Outros"]
@@ -1003,7 +1023,7 @@ async def generate_shopping_list(request: Request, db: Session = Depends(get_db)
             f'  <ul class="bg-white rounded-xl border border-gray-200 px-4 divide-y divide-gray-100">{rows}</ul>'
             f'</div>'
         )
-    return HTMLResponse("".join(html_parts))
+    return HTMLResponse(save_banner + "".join(html_parts))
 
 
 def _cat_icon(cat: str) -> str:
