@@ -34,6 +34,18 @@ class Supplier(Base):
     contact_info = Column(String)
 
     catalog_entries = relationship("SupplierCatalog", back_populates="supplier")
+    supplier_categories = relationship("SupplierCategory", back_populates="supplier",
+                                       cascade="all, delete-orphan")
+
+
+class SupplierCategory(Base):
+    __tablename__ = "supplier_categories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=False)
+    category = Column(String, nullable=False)
+
+    supplier = relationship("Supplier", back_populates="supplier_categories")
 
 class SupplierCatalog(Base):
     __tablename__ = "supplier_catalog"
@@ -61,6 +73,8 @@ class Recipe(Base):
     
     margem_minima_pct = Column(Float, default=20.0)
     observacoes = Column(Text, default="")  # Equipamentos, configurações, notas gerais
+    rendimento_unidades = Column(Integer, default=1)
+    peso_porcao_g = Column(Float, default=0.0)
 
     sections = relationship("RecipeSection", back_populates="recipe")
     batches = relationship("ProductionBatch", back_populates="recipe")

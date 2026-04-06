@@ -13,9 +13,53 @@
 <div x-data="recipeEditor()">
 
   <!-- Page header -->
-  <div class="mb-6">
+  <div class="mb-5">
     <h1 class="text-2xl font-bold text-white">📋 Ficha Técnica</h1>
     <p class="text-gray-400 text-sm mt-0.5">Engenharia de Receitas e Custos</p>
+  </div>
+
+  <!-- ── Recipe picker — always visible, server-rendered options ── -->
+  <div class="card p-4 mb-5">
+    <div class="flex flex-col sm:flex-row sm:items-end gap-3">
+
+      <div class="flex-1">
+        <label class="text-xs text-gray-400 block mb-1 font-medium">
+          Selecionar ficha para editar
+        </label>
+        <select @change="loadRecipeById(parseInt($event.target.value))"
+                class="text-sm font-medium"
+                style="color:#93c5fd">
+          <option value="" style="color:#9ca3af">✨ Nova ficha em branco</option>
+          {% for r in recipes_list %}
+          <option value="{{ r.id }}"
+                  style="color:#f9fafb">{{ r.name }}</option>
+          {% endfor %}
+        </select>
+        {% if not recipes_list %}
+        <p class="text-xs text-gray-600 mt-1">Nenhuma ficha salva ainda. Crie a primeira abaixo.</p>
+        {% else %}
+        <p class="text-xs text-gray-600 mt-1">
+          {{ recipes_list | length }} ficha{{ 's' if recipes_list | length != 1 }} cadastrada{{ 's' if recipes_list | length != 1 }}.
+          Selecione uma para editar ou deixe em branco para criar nova.
+        </p>
+        {% endif %}
+      </div>
+
+      <!-- Actions shown only when a recipe is loaded -->
+      <div x-show="recipeId" x-cloak class="flex items-center gap-2 flex-shrink-0">
+        <button @click="newRecipe()" class="btn btn-secondary btn-sm">+ Nova</button>
+        <button @click="deleteRecipe()" class="btn btn-danger btn-sm">🗑️ Excluir</button>
+      </div>
+    </div>
+
+    <!-- Loaded indicator -->
+    <div x-show="recipeId" x-cloak
+         class="mt-3 pt-3 border-t border-gray-700 flex items-center gap-2 text-sm">
+      <span class="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"></span>
+      <span class="text-gray-400">Editando:</span>
+      <span class="text-white font-semibold" x-text="recipeName"></span>
+      <span class="text-gray-600 text-xs ml-auto">ID <span x-text="recipeId"></span></span>
+    </div>
   </div>
 
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 lg:gap-6">
@@ -30,8 +74,8 @@
         <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wide mb-4 border-b border-gray-700 pb-2">
           Informações da Receita
         </h2>
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div class="sm:col-span-1 flex flex-col gap-1">
+        <div class="grid grid-cols-1 sm:grid-cols-5 gap-3">
+          <div class="sm:col-span-2 flex flex-col gap-1">
             <label class="text-xs text-gray-400">Nome da Receita *</label>
             <input type="text" x-model="recipeName"
                    :class="nameError ? 'error' : ''"
@@ -46,6 +90,16 @@
           <div class="flex flex-col gap-1">
             <label class="text-xs text-gray-400">Margem Mínima (%)</label>
             <input type="number" x-model="margemMinima" step="1" min="0" max="100" />
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs text-gray-400">Rendimento (unidades)</label>
+            <input type="number" x-model="rendimentoUnidades" step="1" min="1"
+                   placeholder="Ex: 12" />
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs text-gray-400">Peso por Porção (g)</label>
+            <input type="number" x-model="pesoPorcaoG" step="1" min="0"
+                   placeholder="Ex: 85" />
           </div>
         </div>
       </div>
@@ -72,10 +126,10 @@
                 <div class="flex gap-2 items-end">
                   <div class="flex-1 flex flex-col gap-1">
                     <label class="text-xs text-gray-500">Insumo</label>
-                    <select x-model="item.ingredientId" @change="updateItemIngredient(item)" class="ts-ingredient text-sm">
+                    <select @change="item.ingredientId = $event.target.value ? parseInt($event.target.value) : ''; updateItemIngredient(item)" class="ts-ingredient text-sm">
                       <option value="">Selecione...</option>
                       <template x-for="ing in ingredients" :key="ing.id">
-                        <option :value="ing.id" x-text="ing.name"></option>
+                        <option :value="ing.id" :selected="item.ingredientId == ing.id" x-text="ing.name"></option>
                       </template>
                     </select>
                   </div>
@@ -89,11 +143,11 @@
                     Marca
                     <span x-show="item.manufacturerId" class="text-blue-400 ml-1 text-xs">— FC e preço aplicados</span>
                   </label>
-                  <select x-model="item.manufacturerId" @change="updateItemBrand(item)"
+                  <select @change="item.manufacturerId = $event.target.value ? parseInt($event.target.value) : ''; updateItemBrand(item)"
                           :disabled="!item.availableBrands.length" class="text-sm">
                     <option value="">— sem marca específica —</option>
                     <template x-for="b in item.availableBrands" :key="b.id">
-                      <option :value="b.id"
+                      <option :value="b.id" :selected="item.manufacturerId == b.id"
                               x-text="b.brand_name + ' · FC≈' + b.suggested_fc + ' · R$' + b.last_price.toFixed(2)">
                       </option>
                     </template>
@@ -102,8 +156,18 @@
 
                 <div class="grid grid-cols-3 gap-2">
                   <div class="flex flex-col gap-1">
-                    <label class="text-xs text-gray-500">Qtde (kg)</label>
-                    <input type="number" x-model="item.qty" step="0.001" />
+                    <label class="text-xs text-gray-500">Quantidade</label>
+                    <div class="flex overflow-hidden"
+                         style="background:var(--bg);border:1px solid var(--border);border-radius:.5rem">
+                      <input type="number" x-model="item.qty" step="0.001"
+                             style="border:none;background:transparent;min-width:0;flex:1;padding:.35rem .4rem;font-size:.875rem" />
+                      <select x-model="item.displayUnit"
+                              style="border:none;background:transparent;border-left:1px solid var(--border);padding:.35rem .25rem;font-size:.7rem;color:#9ca3af;cursor:pointer;max-width:46px">
+                        <template x-for="opt in unitOptions(item.baseUnit)" :key="opt">
+                          <option :value="opt" x-text="opt" style="background:#0f172a;color:#f9fafb"></option>
+                        </template>
+                      </select>
+                    </div>
                   </div>
                   <div class="flex flex-col gap-1">
                     <label class="text-xs text-gray-500">FC</label>
@@ -132,7 +196,7 @@
                   <th class="pb-2 pr-2 font-medium">
                     Marca <span class="text-gray-600 font-normal">(auto FC + preço)</span>
                   </th>
-                  <th class="pb-2 pr-2 font-medium">Qtde (kg)</th>
+                  <th class="pb-2 pr-2 font-medium">Quantidade</th>
                   <th class="pb-2 pr-2 font-medium">FC</th>
                   <th class="pb-2 pr-2 font-medium">FCoc</th>
                   <th class="pb-2 text-right font-medium">Custo</th>
@@ -143,25 +207,37 @@
                 <template x-for="(item, iIndex) in section.items" :key="'d-'+sIndex+'-'+iIndex">
                   <tr class="border-t border-gray-800">
                     <td class="py-2 pr-2">
-                      <select x-model="item.ingredientId" @change="updateItemIngredient(item)" class="text-sm">
+                      <select @change="item.ingredientId = $event.target.value ? parseInt($event.target.value) : ''; updateItemIngredient(item)" class="text-sm">
                         <option value="">Selecione...</option>
                         <template x-for="ing in ingredients" :key="ing.id">
-                          <option :value="ing.id" x-text="ing.name"></option>
+                          <option :value="ing.id" :selected="item.ingredientId == ing.id" x-text="ing.name"></option>
                         </template>
                       </select>
                     </td>
                     <td class="py-2 pr-2">
-                      <select x-model="item.manufacturerId" @change="updateItemBrand(item)"
+                      <select @change="item.manufacturerId = $event.target.value ? parseInt($event.target.value) : ''; updateItemBrand(item)"
                               class="text-sm min-w-[160px]"
                               :disabled="!item.availableBrands.length">
                         <option value="">— sem marca —</option>
                         <template x-for="b in item.availableBrands" :key="b.id">
-                          <option :value="b.id"
+                          <option :value="b.id" :selected="item.manufacturerId == b.id"
                                   x-text="b.brand_name + ' (FC' + b.suggested_fc + ')'"></option>
                         </template>
                       </select>
                     </td>
-                    <td class="py-2 pr-2"><input type="number" x-model="item.qty"  step="0.001" class="w-20" /></td>
+                    <td class="py-2 pr-2">
+                      <div class="flex overflow-hidden"
+                           style="background:var(--bg);border:1px solid var(--border);border-radius:.5rem;width:6.5rem">
+                        <input type="number" x-model="item.qty" step="0.001"
+                               style="border:none;background:transparent;width:3.5rem;padding:.35rem .4rem;font-size:.875rem" />
+                        <select x-model="item.displayUnit"
+                                style="border:none;background:transparent;border-left:1px solid var(--border);padding:.35rem .2rem;font-size:.7rem;color:#9ca3af;cursor:pointer;flex:1">
+                          <template x-for="opt in unitOptions(item.baseUnit)" :key="opt">
+                            <option :value="opt" x-text="opt" style="background:#0f172a;color:#f9fafb"></option>
+                          </template>
+                        </select>
+                      </div>
+                    </td>
                     <td class="py-2 pr-2"><input type="number" x-model="item.fc"   step="0.01"  class="w-16" /></td>
                     <td class="py-2 pr-2"><input type="number" x-model="item.fcoc" step="0.01"  class="w-16" /></td>
                     <td class="py-2 text-right text-gray-300 whitespace-nowrap"
@@ -260,6 +336,23 @@
             <span class="text-blue-400" x-text="'R$ ' + suggestedPrice().toFixed(2)"></span>
           </div>
 
+          <!-- Per-portion block — only shown when rendimentoUnidades > 1 -->
+          <template x-if="parseInt(rendimentoUnidades) > 1">
+            <div class="border-t border-gray-700 pt-3 space-y-2">
+              <p class="text-xs text-gray-500 uppercase tracking-wide font-semibold">Por Porção
+                <span class="font-normal" x-text="'(' + rendimentoUnidades + ' un' + (pesoPorcaoG > 0 ? ' · ' + pesoPorcaoG + 'g' : '') + ')'"></span>
+              </p>
+              <div class="flex justify-between text-sm">
+                <span class="text-gray-400">Custo por Porção</span>
+                <span class="text-gray-200" x-text="'R$ ' + costPerUnit().toFixed(4)"></span>
+              </div>
+              <div class="flex justify-between text-sm font-semibold">
+                <span class="text-gray-300">Preço por Porção</span>
+                <span class="text-blue-300" x-text="'R$ ' + pricePerUnit().toFixed(2)"></span>
+              </div>
+            </div>
+          </template>
+
           <!-- Traffic-light margin indicator -->
           <div class="p-4 rounded-xl"
                :class="{
@@ -295,7 +388,7 @@
 
       <button @click="saveRecipe()" :disabled="saving"
               class="btn btn-primary btn-full">
-        <span x-text="saving ? 'Salvando…' : '💾 Salvar Ficha Técnica'"></span>
+        <span x-text="saving ? 'Salvando…' : (recipeId ? '💾 Atualizar Ficha' : '💾 Salvar Nova Ficha')"></span>
       </button>
     </div>
 
@@ -305,21 +398,101 @@
 
 {% block scripts %}
 <script>
+// @ts-nocheck
 function recipeEditor() {
   return {
+    // ── Ingredient catalogue (injected server-side) ───────────────
     ingredients: {{ ingredients_json | tojson }},
-    recipeName: '',
-    nameError: false,
-    markup: 2.5,
-    margemMinima: 20,
-    laborCost: 0,
-    energyCost: 0,
-    observacoes: '',
-    saving: false,
-    saveStatus: '',
-    saveOk: true,
-    sections: [{ name: 'Massa', yield: 1.0, instrucoes: '', items: [] }],
 
+    // ── Recipe identity ──────────────────────────────────────────
+    recipeId:     null,
+    savedRecipes: {{ recipes_list | tojson }},  // server-rendered, no fetch needed
+
+    // ── Form state ───────────────────────────────────────────────
+    recipeName:          '',
+    nameError:           false,
+    markup:              2.5,
+    margemMinima:        20,
+    laborCost:           0,
+    energyCost:          0,
+    observacoes:         '',
+    rendimentoUnidades:  1,
+    pesoPorcaoG:         0,
+    saving:              false,
+    saveStatus:          '',
+    saveOk:              true,
+    sections:            [{ name: 'Massa', yield: 1.0, instrucoes: '', items: [] }],
+
+    init() {},   // nothing async needed at startup
+
+    // ── Load a saved recipe by id ─────────────────────────────────
+    async loadRecipeById(id) {
+      if (!id) { this.newRecipe(); return; }
+      try {
+        const r = await fetch(`/api/recipes/${id}`);
+        if (!r.ok) throw new Error('Receita não encontrada');
+        const data = await r.json();
+        this.recipeId          = data.id;
+        this.recipeName        = data.recipeName;
+        this.markup            = data.markup;
+        this.margemMinima      = data.margemMinima;
+        this.laborCost         = data.laborCost;
+        this.energyCost        = data.energyCost;
+        this.observacoes       = data.observacoes;
+        this.rendimentoUnidades = data.rendimentoUnidades || 1;
+        this.pesoPorcaoG       = data.pesoPorcaoG || 0;
+        // Hydrate baseUnit/displayUnit from ingredient catalogue
+        this.sections = data.sections.map(sec => ({
+          ...sec,
+          items: sec.items.map(item => {
+            const ing = this.ingredients.find(i => i.id == item.ingredientId);
+            const base = ing ? (ing.unit || 'kg').toLowerCase() : 'kg';
+            let disp = base;
+            if (base === 'kg') disp = 'g';
+            else if (base === 'l') disp = 'ml';
+            return { ...item, baseUnit: base, displayUnit: disp };
+          }),
+        }));
+        this.saveStatus   = '';
+        this.nameError    = false;
+        toast(`"${data.recipeName}" carregada`);
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    },
+
+    // ── Reset to blank new recipe ─────────────────────────────────
+    newRecipe() {
+      this.recipeId           = null;
+      this.recipeName         = '';
+      this.markup             = 2.5;
+      this.margemMinima       = 20;
+      this.laborCost          = 0;
+      this.energyCost         = 0;
+      this.observacoes        = '';
+      this.rendimentoUnidades = 1;
+      this.pesoPorcaoG        = 0;
+      this.sections           = [{ name: 'Massa', yield: 1.0, instrucoes: '', items: [] }];
+      this.saveStatus         = '';
+      this.nameError          = false;
+    },
+
+    // ── Delete current recipe ─────────────────────────────────────
+    async deleteRecipe() {
+      if (!this.recipeId) return;
+      if (!confirm(`Excluir "${this.recipeName}"? Esta ação não pode ser desfeita.`)) return;
+      try {
+        const r = await fetch(`/recipes/${this.recipeId}`, { method: 'DELETE' });
+        if (!r.ok) throw new Error('Erro ao excluir');
+        this.savedRecipes = this.savedRecipes.filter(r => r.id !== this.recipeId);
+        toast(`"${this.recipeName}" excluída`, 'info');
+        this.newRecipe();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    },
+
+    // ── BOM helpers ───────────────────────────────────────────────
     addSection() {
       this.sections.push({ name: 'Nova Seção', yield: 1.0, instrucoes: '', items: [] });
     },
@@ -327,7 +500,7 @@ function recipeEditor() {
     addItem(sIndex) {
       this.sections[sIndex].items.push({
         ingredientId: '', manufacturerId: '', availableBrands: [],
-        price: 0, qty: 0, fc: 1.0, fcoc: 1.0,
+        price: 0, qty: 0, baseUnit: 'kg', displayUnit: 'kg', fc: 1.0, fcoc: 1.0,
       });
     },
 
@@ -340,6 +513,16 @@ function recipeEditor() {
       item.price = ing ? ing.price : 0;
       item.manufacturerId = '';
       item.availableBrands = [];
+
+      // Auto-set unit from ingredient catalogue
+      if (ing && ing.unit) {
+        item.baseUnit = ing.unit.toLowerCase();
+        // Default displayUnit: prefer smaller unit so users type whole numbers
+        if (item.baseUnit === 'kg') item.displayUnit = 'g';
+        else if (item.baseUnit === 'l')  item.displayUnit = 'ml';
+        else item.displayUnit = item.baseUnit;
+      }
+
       if (!item.ingredientId) return;
       try {
         const r = await fetch(`/api/ingredient-brands?ingredient_id=${item.ingredientId}`);
@@ -354,9 +537,30 @@ function recipeEditor() {
       if (brand.last_price > 0) item.price = brand.last_price;
     },
 
+    // ── Unit conversion helpers ───────────────────────────────────
+    unitOptions(baseUnit) {
+      const u = (baseUnit || 'kg').toLowerCase();
+      if (u === 'kg' || u === 'g')  return ['kg', 'g'];
+      if (u === 'l'  || u === 'ml') return ['L', 'ml'];
+      return [baseUnit || 'un'];
+    },
+
+    // Convert displayUnit qty back to baseUnit qty for cost math
+    _qtyInBase(item) {
+      let qty = parseFloat(item.qty) || 0;
+      const base = (item.baseUnit || '').toLowerCase();
+      const disp = (item.displayUnit || '').toLowerCase();
+      if (base === 'kg' && disp === 'g')  return qty / 1000;
+      if (base === 'l'  && disp === 'ml') return qty / 1000;
+      if (base === 'g'  && disp === 'kg') return qty * 1000;
+      if (base === 'ml' && disp === 'l')  return qty * 1000;
+      return qty;
+    },
+
+    // ── Cost calculations ─────────────────────────────────────────
     calcItem(item) {
       const fcoc = parseFloat(item.fcoc) || 1;
-      return ((parseFloat(item.price) * parseFloat(item.fc)) / fcoc) * parseFloat(item.qty);
+      return ((parseFloat(item.price) * parseFloat(item.fc)) / fcoc) * this._qtyInBase(item);
     },
 
     totalIngCost() {
@@ -379,37 +583,59 @@ function recipeEditor() {
       return ((p - this.totalCost()) / p) * 100;
     },
 
+    costPerUnit() {
+      const n = parseInt(this.rendimentoUnidades) || 1;
+      return this.totalCost() / n;
+    },
+
+    pricePerUnit() {
+      const n = parseInt(this.rendimentoUnidades) || 1;
+      return this.suggestedPrice() / n;
+    },
+
+    // ── Save / Update ─────────────────────────────────────────────
     async saveRecipe() {
       if (!this.recipeName.trim()) {
-        this.nameError = true;
-        this.saveOk = false;
+        this.nameError  = true;
+        this.saveOk     = false;
         this.saveStatus = 'Informe o nome da receita antes de salvar.';
         toast('Informe o nome da receita', 'error');
         return;
       }
-      this.saving = true;
+      this.saving     = true;
       this.saveStatus = '';
+      const payload = {
+        recipeName: this.recipeName, markup: this.markup,
+        margemMinima: this.margemMinima, laborCost: this.laborCost,
+        energyCost: this.energyCost, observacoes: this.observacoes,
+        rendimentoUnidades: parseInt(this.rendimentoUnidades) || 1,
+        pesoPorcaoG: parseFloat(this.pesoPorcaoG) || 0,
+        sections: this.sections,
+      };
+      const isNew = !this.recipeId;
+      const url    = isNew ? '/recipes/full-save' : `/recipes/${this.recipeId}/full-save`;
+      const method = isNew ? 'POST' : 'PUT';
       try {
-        const resp = await fetch('/recipes/full-save', {
-          method: 'POST',
+        const resp = await fetch(url, {
+          method,
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            recipeName: this.recipeName, markup: this.markup,
-            margemMinima: this.margemMinima, laborCost: this.laborCost,
-            energyCost: this.energyCost, observacoes: this.observacoes,
-            sections: this.sections,
-          }),
+          body: JSON.stringify(payload),
         });
         const data = await resp.json();
         if (resp.ok) {
-          this.saveOk = true;
-          this.saveStatus = `"${data.name}" salva! (ID ${data.id})`;
-          toast(`"${data.name}" salva com sucesso!`);
+          this.recipeId = data.id;
+          this.saveOk     = true;
+          this.saveStatus = `"${data.name}" ${isNew ? 'salva' : 'atualizada'}! (ID ${data.id})`;
+          toast(`"${data.name}" ${isNew ? 'salva' : 'atualizada'} com sucesso!`);
+          // Keep savedRecipes list up-to-date
+          const idx = this.savedRecipes.findIndex(r => r.id === data.id);
+          if (idx >= 0) this.savedRecipes[idx].name = data.name;
+          else          this.savedRecipes.push({ id: data.id, name: data.name });
         } else {
           throw new Error(data.detail || 'Erro desconhecido');
         }
       } catch (err) {
-        this.saveOk = false;
+        this.saveOk     = false;
         this.saveStatus = err.message;
         toast(err.message, 'error');
       } finally {

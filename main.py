@@ -1,3 +1,4 @@
+import json
 from fastapi import FastAPI, Request, Form, Depends, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
@@ -17,6 +18,8 @@ models.Base.metadata.create_all(bind=engine)
 # ── Schema migrations (idempotent) ────────────────────────────────────────────
 _MIGRATIONS = [
     "ALTER TABLE ingredients ADD COLUMN category TEXT DEFAULT 'Outros'",
+    "ALTER TABLE recipes ADD COLUMN rendimento_unidades INTEGER DEFAULT 1",
+    "ALTER TABLE recipes ADD COLUMN peso_porcao_g REAL DEFAULT 0.0",
 ]
 with engine.connect() as _conn:
     for _sql in _MIGRATIONS:
@@ -27,6 +30,19 @@ with engine.connect() as _conn:
             pass  # column already exists
 
 app = FastAPI(title="SmartFood Ops 360 Foundation")
+
+# ── Category constants (used by templates and helpers) ────────────────────────
+INGREDIENT_CATEGORIES = ["Carnes", "Vegetais", "Temperos", "Laticínios", "Carboidratos", "Embalagens", "Outros"]
+
+CAT_STYLE = {
+    "Carnes":        {"emoji": "🥩", "color": "#fca5a5", "bg": "#450a0a"},
+    "Vegetais":      {"emoji": "🥦", "color": "#86efac", "bg": "#052e16"},
+    "Temperos":      {"emoji": "🧄", "color": "#fcd34d", "bg": "#451a03"},
+    "Laticínios":    {"emoji": "🧀", "color": "#fde68a", "bg": "#422006"},
+    "Carboidratos":  {"emoji": "🌾", "color": "#fdba74", "bg": "#431407"},
+    "Embalagens":    {"emoji": "📦", "color": "#a5b4fc", "bg": "#1e1b4b"},
+    "Outros":        {"emoji": "📋", "color": "#9ca3af", "bg": "#1f2937"},
+}
 
 # Templates setup
 templates = Jinja2Templates(directory="templates")
@@ -54,6 +70,8 @@ def _relative_time(dt: datetime | None) -> str:
 
 templates.env.globals["relative_time"] = _relative_time
 templates.env.globals["now"] = datetime.utcnow
+templates.env.globals["cat_style"] = CAT_STYLE
+templates.env.globals["ingredient_categories"] = INGREDIENT_CATEGORIES
 
 # Dependency
 def get_db():
@@ -79,23 +97,24 @@ async def index(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/ficha-tecnica", response_class=HTMLResponse)
 async def ficha_tecnica_page(request: Request, db: Session = Depends(get_db)):
-    # Getting ingredients with their last price for the calculator
     ingredients_data = []
-    ingredients = db.query(models.Ingredient).all()
-    for ing in ingredients:
-        # Get last price from catalog if available
-        last_entry = db.query(models.SupplierCatalog).filter_by(ingredient_id=ing.id).order_by(models.SupplierCatalog.id.desc()).first()
-        price = last_entry.last_price if last_entry else 0.0
+    for ing in db.query(models.Ingredient).order_by(models.Ingredient.name).all():
+        last_entry = (db.query(models.SupplierCatalog)
+                      .filter_by(ingredient_id=ing.id)
+                      .order_by(models.SupplierCatalog.id.desc()).first())
         ingredients_data.append({
-            "id": ing.id,
-            "name": ing.name,
-            "price": price,
-            "unit": ing.unit
+            "id": ing.id, "name": ing.name,
+            "price": last_entry.last_price if last_entry else 0.0,
+            "unit": ing.unit,
         })
-    
+
+    recipes = db.query(models.Recipe).order_by(models.Recipe.name).all()
+    recipes_list = [{"id": r.id, "name": r.name} for r in recipes]
+
     return templates.TemplateResponse("ficha_tecnica.html", {
         "request": request,
-        "ingredients_json": ingredients_data
+        "ingredients_json": ingredients_data,
+        "recipes_list": recipes_list,
     })
 
 # --- RECIPES ---
@@ -115,8 +134,6 @@ async def create_recipe(
     return HTMLResponse(content=f'<div class="p-4 bg-green-500/20 text-green-400 rounded">Receita "{new_recipe.name}" criada com sucesso! ID: {new_recipe.id}</div>')
 
 # ── Helper: render rows for HTMX responses ───────────────────────────────────
-
-INGREDIENT_CATEGORIES = ["Carnes", "Vegetais", "Temperos", "Laticínios", "Carboidratos", "Embalagens", "Outros"]
 
 def _ing_row(ing: models.Ingredient) -> str:
     n   = ing.name.replace("'", "&#39;")
@@ -182,25 +199,62 @@ def _man_row(m: models.IngredientManufacturer) -> str:
 def _sup_row(s: models.Supplier) -> str:
     n = s.name.replace("'", "&#39;")
     c = (s.contact_info or "").replace("'", "&#39;")
+    cats = [sc.category for sc in s.supplier_categories]
+    # Store as JSON in a single-quoted HTML attribute to avoid escaping issues
+    cats_json = json.dumps(cats)
+
+    # Category badges for view mode (styled by CSS [data-cat="..."] rules in index.html)
+    badges = "".join(
+        f'<span class="cat-badge" data-cat="{cat}">'
+        f'{CAT_STYLE.get(cat, CAT_STYLE["Outros"])["emoji"]} {cat}</span>'
+        for cat in cats
+    )
+
+    # Checkboxes for each category in edit mode
+    checks = "".join(
+        f'<label style="display:flex;align-items:center;gap:.35rem;font-size:.72rem;cursor:pointer">'
+        f'<input type="checkbox" :checked="cats.includes(\'{cat}\')" '
+        f'@change="cats.includes(\'{cat}\') ? cats.splice(cats.indexOf(\'{cat}\'),1) : cats.push(\'{cat}\')" />'
+        f' {CAT_STYLE.get(cat, CAT_STYLE["Outros"])["emoji"]} {cat}</label>'
+        for cat in INGREDIENT_CATEGORIES
+    )
+
+    confirm_msg = f"Excluir fornecedor '{n}'? Entradas de catálogo também serão removidas."
     return (
-        f'<div id="sup-{s.id}" class="item-row flex items-center gap-2 p-2 rounded-lg"'
+        f'<div id="sup-{s.id}" data-cats=\'{cats_json}\''
+        f' class="item-row p-2 rounded-lg"'
         f' style="background:var(--card);border:1px solid var(--border)"'
-        f' x-data="{{editing:false,n:\'{n}\',c:\'{c}\'}}">'
-        f'<div x-show="!editing" class="flex-1 flex items-center justify-between min-h-[44px]">'
-        f'  <span class="text-sm text-white"><span x-text="n"></span>'
-        f'    <span class="text-gray-500 text-xs ml-1" x-show="c" x-text="\'· \'+c"></span></span>'
-        f'  <div class="flex gap-1">'
+        f' x-data="{{editing:false,n:\'{n}\',c:\'{c}\',cats:[]}}"'
+        f' x-init="cats=JSON.parse($el.dataset.cats)">'
+
+        # View mode
+        f'<div x-show="!editing" class="flex items-start justify-between gap-2 min-h-[44px]">'
+        f'  <div class="flex-1 min-w-0">'
+        f'    <div class="text-sm text-white flex flex-wrap items-center gap-1">'
+        f'      <span x-text="n"></span>'
+        f'      <span class="text-gray-500 text-xs" x-show="c" x-text="\'· \'+c"></span>'
+        f'    </div>'
+        f'    <div class="flex flex-wrap gap-1 mt-1">{badges if badges else "<span style=\'font-size:.65rem;color:#6b7280\'>Sem categorias</span>"}</div>'
+        f'  </div>'
+        f'  <div class="flex gap-1 flex-shrink-0">'
         f'    <button @click="editing=true" class="icon-btn hover:text-blue-400">✏️</button>'
         f'    <button hx-delete="/suppliers/{s.id}" hx-target="#sup-{s.id}" hx-swap="outerHTML"'
-        f'            hx-confirm="Excluir fornecedor \'{n}\'? Entradas de catálogo também serão removidas."'
+        f'            hx-confirm="{confirm_msg}"'
         f'            class="icon-btn hover:text-red-400">🗑️</button>'
         f'  </div>'
         f'</div>'
-        f'<div x-show="editing" class="flex-1 flex flex-wrap items-center gap-2 min-h-[44px]">'
-        f'  <input x-model="n" class="field flex-1 min-w-[140px] text-sm" placeholder="Nome" />'
-        f'  <input x-model="c" class="field flex-1 min-w-[120px] text-sm" placeholder="Contato" />'
-        f'  <button @click="saveSup({s.id},n,c,$el)" class="icon-btn text-green-400 hover:text-green-300">💾</button>'
-        f'  <button @click="editing=false" class="icon-btn hover:text-white">✕</button>'
+
+        # Edit mode
+        f'<div x-show="editing" x-cloak class="space-y-2 py-1">'
+        f'  <div class="flex flex-wrap gap-1.5">'
+        f'    <input x-model="n" class="field flex-1 min-w-[120px] text-sm" placeholder="Nome" />'
+        f'    <input x-model="c" class="field flex-1 min-w-[120px] text-sm" placeholder="Contato" />'
+        f'  </div>'
+        f'  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.3rem .75rem">{checks}</div>'
+        f'  <div class="flex gap-2 pt-1">'
+        f'    <button @click="saveSup({s.id},n,c,cats,$el)" class="icon-btn text-green-400 hover:text-green-300 text-xs">💾 Salvar</button>'
+        f'    <button @click="editing=false" class="icon-btn hover:text-white text-xs">✕ Cancelar</button>'
+        f'  </div>'
         f'</div>'
         f'</div>'
     )
@@ -305,13 +359,19 @@ async def delete_manufacturer(man_id: int, db: Session = Depends(get_db)):
 
 # --- SUPPLIERS ---
 @app.post("/suppliers", response_class=HTMLResponse)
-async def create_supplier(
-    name: str = Form(...),
-    contact_info: str = Form(None),
-    db: Session = Depends(get_db),
-):
+async def create_supplier(request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    name = form.get("name", "").strip()
+    if not name:
+        raise HTTPException(422, "Nome obrigatório")
+    contact_info = form.get("contact_info") or None
+    categories = form.getlist("categories")
+
     sup = models.Supplier(name=name, contact_info=contact_info)
     db.add(sup)
+    db.flush()
+    for cat in categories:
+        db.add(models.SupplierCategory(supplier_id=sup.id, category=cat))
     db.commit()
     db.refresh(sup)
     oob = f'<option value="{sup.id}" hx-swap-oob="beforeend:.supplier-select">{sup.name}</option>'
@@ -319,17 +379,20 @@ async def create_supplier(
 
 
 @app.put("/suppliers/{sup_id}", response_class=HTMLResponse)
-async def update_supplier(
-    sup_id: int,
-    name: str = Form(...),
-    contact_info: str = Form(None),
-    db: Session = Depends(get_db),
-):
+async def update_supplier(sup_id: int, request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    name = form.get("name", "").strip()
+    contact_info = form.get("contact_info") or None
+    categories = form.getlist("categories")
+
     sup = db.query(models.Supplier).filter_by(id=sup_id).first()
     if not sup:
         raise HTTPException(404)
     sup.name = name
     sup.contact_info = contact_info
+    db.query(models.SupplierCategory).filter_by(supplier_id=sup_id).delete()
+    for cat in categories:
+        db.add(models.SupplierCategory(supplier_id=sup_id, category=cat))
     db.commit()
     return HTMLResponse("")
 
@@ -474,24 +537,104 @@ async def api_ingredient_brands(ingredient_id: int, db: Session = Depends(get_db
     return result
 
 
-@app.post("/recipes/full-save")
-async def full_save_recipe(request: Request, db: Session = Depends(get_db)):
-    """
-    Accept the complete Alpine state as JSON and persist Recipe + Sections + BOMItems.
-    manufacturer_id is stored on each BOMItem so margin calculations use
-    brand-specific price and yield.
-    """
-    body = await request.json()
+@app.get("/api/recipes")
+async def list_recipes(db: Session = Depends(get_db)):
+    recipes = db.query(models.Recipe).order_by(models.Recipe.name).all()
+    return [{"id": r.id, "name": r.name} for r in recipes]
 
-    recipe = models.Recipe(
-        name=body.get("recipeName") or "Sem nome",
-        labor_cost=float(body.get("laborCost", 0)),
-        energy_cost=float(body.get("energyCost", 0)),
-        markup=float(body.get("markup", 1.0)),
-        margem_minima_pct=float(body.get("margemMinima", 20.0)),
-        observacoes=body.get("observacoes", ""),
-    )
-    db.add(recipe)
+
+@app.get("/api/recipes/{recipe_id}")
+async def get_recipe(recipe_id: int, db: Session = Depends(get_db)):
+    """Return full recipe state as JSON, ready to load into the Alpine editor."""
+    recipe = db.query(models.Recipe).filter_by(id=recipe_id).first()
+    if not recipe:
+        raise HTTPException(404)
+
+    sections_data = []
+    for sec in recipe.sections:
+        items_data = []
+        for item in sec.items:
+            ing = item.ingredient
+            # Resolve current catalog price for this item
+            price = 0.0
+            if item.manufacturer_id:
+                c = (db.query(models.SupplierCatalog)
+                     .filter_by(manufacturer_id=item.manufacturer_id)
+                     .order_by(models.SupplierCatalog.id.desc()).first())
+                if c:
+                    price = c.last_price
+            if price == 0.0 and ing:
+                c = (db.query(models.SupplierCatalog)
+                     .filter_by(ingredient_id=ing.id)
+                     .order_by(models.SupplierCatalog.id.desc()).first())
+                if c:
+                    price = c.last_price
+
+            # Fetch available brands for the ingredient
+            brands = []
+            if ing:
+                for m in ing.manufacturers:
+                    cat = (db.query(models.SupplierCatalog)
+                           .filter_by(manufacturer_id=m.id)
+                           .order_by(models.SupplierCatalog.id.desc()).first())
+                    brands.append({
+                        "id": m.id,
+                        "brand_name": m.brand_name,
+                        "yield_percentage": m.yield_percentage,
+                        "suggested_fc": round(100.0 / m.yield_percentage, 3) if m.yield_percentage > 0 else 1.0,
+                        "last_price": cat.last_price if cat else 0.0,
+                    })
+
+            items_data.append({
+                "ingredientId":   ing.id if ing else "",
+                "manufacturerId": item.manufacturer_id or "",
+                "availableBrands": brands,
+                "price":          price,
+                "qty":            item.quantity,
+                "fc":             item.correction_factor,
+                "fcoc":           item.cooking_factor,
+            })
+
+        sections_data.append({
+            "name":      sec.name,
+            "yield":     sec.post_cooking_weight,
+            "instrucoes": sec.instrucoes or "",
+            "items":     items_data,
+        })
+
+    return {
+        "id":                  recipe.id,
+        "recipeName":          recipe.name,
+        "markup":              recipe.markup,
+        "margemMinima":        recipe.margem_minima_pct,
+        "laborCost":           recipe.labor_cost,
+        "energyCost":          recipe.energy_cost,
+        "observacoes":         recipe.observacoes or "",
+        "rendimentoUnidades":  recipe.rendimento_unidades or 1,
+        "pesoPorcaoG":         recipe.peso_porcao_g or 0.0,
+        "sections":            sections_data,
+    }
+
+
+@app.delete("/recipes/{recipe_id}", response_class=HTMLResponse)
+async def delete_recipe(recipe_id: int, db: Session = Depends(get_db)):
+    recipe = db.query(models.Recipe).filter_by(id=recipe_id).first()
+    if recipe:
+        for sec in recipe.sections:
+            db.query(models.BOMItem).filter_by(section_id=sec.id).delete()
+        db.query(models.RecipeSection).filter_by(recipe_id=recipe_id).delete()
+        db.query(models.ProductionBatch).filter_by(recipe_id=recipe_id).update({"recipe_id": None})
+        db.delete(recipe)
+        db.commit()
+    return HTMLResponse("")
+
+
+def _persist_recipe_body(body: dict, db: Session, recipe: models.Recipe):
+    """Write sections + BOMItems for a recipe (replaces existing)."""
+    # Delete old sections/items
+    for sec in recipe.sections:
+        db.query(models.BOMItem).filter_by(section_id=sec.id).delete()
+    db.query(models.RecipeSection).filter_by(recipe_id=recipe.id).delete()
     db.flush()
 
     for sec in body.get("sections", []):
@@ -515,6 +658,42 @@ async def full_save_recipe(request: Request, db: Session = Depends(get_db)):
                 cooking_factor=float(it.get("fcoc", 1.0)),
             ))
 
+
+@app.put("/recipes/{recipe_id}/full-save")
+async def update_recipe(recipe_id: int, request: Request, db: Session = Depends(get_db)):
+    recipe = db.query(models.Recipe).filter_by(id=recipe_id).first()
+    if not recipe:
+        raise HTTPException(404)
+    body = await request.json()
+    recipe.name                = body.get("recipeName") or recipe.name
+    recipe.labor_cost          = float(body.get("laborCost", 0))
+    recipe.energy_cost         = float(body.get("energyCost", 0))
+    recipe.markup              = float(body.get("markup", 1.0))
+    recipe.margem_minima_pct   = float(body.get("margemMinima", 20.0))
+    recipe.observacoes         = body.get("observacoes", "")
+    recipe.rendimento_unidades = int(body.get("rendimentoUnidades", 1))
+    recipe.peso_porcao_g       = float(body.get("pesoPorcaoG", 0.0))
+    _persist_recipe_body(body, db, recipe)
+    db.commit()
+    return JSONResponse({"id": recipe.id, "name": recipe.name})
+
+
+@app.post("/recipes/full-save")
+async def full_save_recipe(request: Request, db: Session = Depends(get_db)):
+    body = await request.json()
+    recipe = models.Recipe(
+        name=body.get("recipeName") or "Sem nome",
+        labor_cost=float(body.get("laborCost", 0)),
+        energy_cost=float(body.get("energyCost", 0)),
+        markup=float(body.get("markup", 1.0)),
+        margem_minima_pct=float(body.get("margemMinima", 20.0)),
+        observacoes=body.get("observacoes", ""),
+        rendimento_unidades=int(body.get("rendimentoUnidades", 1)),
+        peso_porcao_g=float(body.get("pesoPorcaoG", 0.0)),
+    )
+    db.add(recipe)
+    db.flush()
+    _persist_recipe_body(body, db, recipe)
     db.commit()
     return JSONResponse({"id": recipe.id, "name": recipe.name})
 
@@ -574,6 +753,72 @@ async def dashboard(request: Request, limite: float = 20.0, db: Session = Depend
         "ok_list": ok_list,
         "total": len(all_metrics),
     })
+
+# ── Bulk price update by supplier ────────────────────────────────────────────
+
+@app.get("/precos/fornecedor", response_class=HTMLResponse)
+async def get_fornecedor_precos(supplier_id: int, db: Session = Depends(get_db)):
+    """Return all catalog entries for a supplier as an editable price form fragment."""
+    catalog = (
+        db.query(models.SupplierCatalog)
+        .filter_by(supplier_id=supplier_id)
+        .order_by(models.SupplierCatalog.ingredient_id)
+        .all()
+    )
+    if not catalog:
+        return HTMLResponse(
+            "<p class='text-sm text-gray-500 mt-3 py-4 text-center'>Nenhum produto cadastrado para este fornecedor ainda.<br>"
+            "<span class='text-xs text-gray-600'>Cadastre entradas em <a href=\"/precos#add-cotacao\" class=\"text-blue-400 underline\">Nova Cotação</a> primeiro.</span></p>"
+        )
+
+    rows = "".join(
+        f'<div class="flex items-center justify-between gap-3 py-2.5 border-b border-gray-800 last:border-0">'
+        f'  <div class="flex-1 min-w-0">'
+        f'    <p class="text-sm font-medium text-white truncate">{c.ingredient.name}</p>'
+        f'    <p class="text-xs text-gray-500">{c.manufacturer.brand_name} · FC {round(100/c.manufacturer.yield_percentage,3) if c.manufacturer.yield_percentage > 0 else 1}</p>'
+        f'  </div>'
+        f'  <input type="hidden" name="catalog_ids" value="{c.id}" />'
+        f'  <div class="flex items-center gap-1.5 flex-shrink-0">'
+        f'    <span class="text-gray-500 text-sm">R$</span>'
+        f'    <input type="number" name="prices" value="{c.last_price or 0}" step="0.01" min="0"'
+        f'           class="w-28 text-right font-mono text-sm" style="color:#93c5fd; min-height:36px;" />'
+        f'  </div>'
+        f'</div>'
+        for c in catalog
+    )
+    return HTMLResponse(
+        f'<div class="mt-3 rounded-xl px-4 py-2" style="background:var(--bg); border:1px solid var(--border)">'
+        f'  {rows}'
+        f'</div>'
+        f'<button type="submit" class="btn btn-primary btn-full mt-4 text-sm">'
+        f'  💾 Salvar {len(catalog)} preço{"s" if len(catalog) != 1 else ""}'
+        f'</button>'
+    )
+
+
+@app.post("/precos/bulk-update", response_class=HTMLResponse)
+async def bulk_update_precos(request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    catalog_ids = form.getlist("catalog_ids")
+    prices      = form.getlist("prices")
+    updated = 0
+    for cid, price_str in zip(catalog_ids, prices):
+        try:
+            cat = db.query(models.SupplierCatalog).filter_by(id=int(cid)).first()
+            if cat:
+                cat.last_price = float(price_str)
+                cat.updated_at = datetime.utcnow()
+                updated += 1
+        except (ValueError, TypeError):
+            pass
+    db.commit()
+    return HTMLResponse(
+        f'<div class="p-3 rounded-lg text-sm text-green-300 mt-3 flex items-center gap-2"'
+        f' style="background:rgba(22,101,52,.25); border:1px solid rgba(34,197,94,.2)">'
+        f'  ✓ {updated} preço{"s" if updated != 1 else ""} atualizado{"s" if updated != 1 else ""} com sucesso!'
+        f'</div>'
+    )
+
 
 # ── Module 3: Shopping list / Compras ────────────────────────────────────────
 

@@ -19,6 +19,16 @@
   }
   .price-input:focus { border-color: var(--blue); outline: 2px solid rgba(59,130,246,.25); color: #fff; }
 
+  /* Inline entry — price field with R$ prefix */
+  #add-cotacao input[name="last_price"] {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: .5rem;
+    min-height: 40px;
+    transition: border-color .15s;
+  }
+  #add-cotacao input[name="last_price"]:focus { border-color: var(--blue); outline: 2px solid rgba(59,130,246,.25); }
+
   /* Staleness */
   .fresh  { color: #4ade80; }
   .recent { color: #facc15; }
@@ -38,6 +48,50 @@
     </div>
     <a href="#add-cotacao" class="btn btn-primary text-sm no-underline">+ Nova Cotação</a>
   </div>
+
+  <!-- ══════════════════════════════════════════════════════════
+       BULK UPDATE — Cotação por Fornecedor
+  ═══════════════════════════════════════════════════════════ -->
+  <section class="card p-5 mb-6">
+    <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wide border-b border-gray-700 pb-2 mb-4 flex items-center gap-2">
+      📝 Recebeu Tabela de Preços? Atualize por Fornecedor
+    </h3>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Selecione o Fornecedor</label>
+        <select hx-get="/precos/fornecedor"
+                hx-include="[name='supplier_id_bulk']"
+                hx-trigger="change"
+                hx-target="#supplier-price-rows"
+                name="supplier_id_bulk"
+                class="text-sm">
+          <option value="">— selecione —</option>
+          {% for s in suppliers %}
+          <option value="{{ s.id }}">{{ s.name }}</option>
+          {% endfor %}
+        </select>
+        <p class="text-xs text-gray-600 mt-1">
+          Todos os produtos deste fornecedor aparecem abaixo para edição em massa.
+        </p>
+      </div>
+
+      <div class="text-xs text-gray-600 hidden sm:flex flex-col justify-center gap-1 pl-4 border-l border-gray-800">
+        <p class="text-gray-500 font-medium">Como usar:</p>
+        <p>1. Selecione o fornecedor</p>
+        <p>2. Ajuste os preços conforme a tabela recebida</p>
+        <p>3. Clique em "Salvar preços"</p>
+      </div>
+    </div>
+
+    <form hx-post="/precos/bulk-update"
+          hx-target="#bulk-update-result"
+          hx-swap="innerHTML"
+          @htmx:after-request="$event.detail.successful && setTimeout(() => location.reload(), 1500)">
+      <div id="supplier-price-rows"></div>
+      <div id="bulk-update-result"></div>
+    </form>
+  </section>
 
   <!-- Staleness legend -->
   <div class="flex flex-wrap gap-4 mb-5 text-xs text-gray-500">
@@ -219,41 +273,36 @@
   {% endfor %}
 
   <!-- ══════════════════════════════════════════════════════════
-       GLOBAL ADD
+       GLOBAL ADD — inline entry, supplier stays frozen
   ═══════════════════════════════════════════════════════════ -->
-  <section id="add-cotacao" class="mt-6 card p-5">
-    <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wide mb-4 border-b border-gray-700 pb-2">
-      + Nova Cotação (qualquer ingrediente)
+  <section id="add-cotacao" class="mt-6 card p-5"
+           x-data="{
+             clearAndFocus() {
+               this.$refs.ingSelect.value = '';
+               this.$refs.manSelect.innerHTML = '<option value=\\'\\'>Aguardando ingrediente...</option>';
+               this.$refs.priceInput.value = '';
+               this.$refs.ingSelect.focus();
+             }
+           }">
+
+    <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wide mb-4 border-b border-gray-700 pb-2 flex items-center justify-between">
+      <span>⚡ Entrada Rápida de Cotação</span>
+      <span class="text-xs font-normal text-gray-500 hidden sm:inline">TAB para navegar · Enter para salvar</span>
     </h3>
+
     <form hx-post="/catalog"
           hx-target="#global-add-result"
           hx-swap="innerHTML"
-          @htmx:after-request="$event.detail.successful && ($refs.globalForm.reset(), toast('Cotação registrada'))"
-          x-ref="globalForm"
-          class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          @htmx:after-request="$event.detail.successful && (clearAndFocus(), toast('Cotação registrada'))"
+          class="flex flex-col sm:flex-row gap-2 items-end">
 
-      <div>
-        <label class="text-xs text-gray-400 block mb-1">Ingrediente</label>
-        <select name="ingredient_id"
-                hx-get="/manufacturers-search" hx-trigger="change"
-                hx-target="#global-man-select" required class="text-sm">
-          <option value="">Selecione...</option>
-          {% for ing in ingredients %}
-          <option value="{{ ing.id }}">{{ ing.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-
-      <div>
-        <label class="text-xs text-gray-400 block mb-1">Marca</label>
-        <select id="global-man-select" name="manufacturer_id" required class="text-sm">
-          <option value="">Aguardando ingrediente...</option>
-        </select>
-      </div>
-
-      <div>
-        <label class="text-xs text-gray-400 block mb-1">Fornecedor</label>
-        <select name="supplier_id" required class="text-sm">
+      <!-- 1. Fornecedor — stays selected after save -->
+      <div class="w-full sm:flex-1">
+        <label class="text-xs text-gray-400 block mb-1">
+          Fornecedor
+          <span class="text-gray-600 font-normal">(não apaga após salvar)</span>
+        </label>
+        <select name="supplier_id" required class="text-sm w-full">
           <option value="">Selecione...</option>
           {% for s in suppliers %}
           <option value="{{ s.id }}">{{ s.name }}</option>
@@ -261,19 +310,51 @@
         </select>
       </div>
 
-      <div>
-        <label class="text-xs text-gray-400 block mb-1">Preço (R$)</label>
-        <input type="number" name="last_price" step="0.01" min="0"
-               placeholder="0,00" required class="text-sm" />
+      <!-- 2. Ingrediente — cleared after save, cursor returns here -->
+      <div class="w-full sm:flex-1">
+        <label class="text-xs text-gray-400 block mb-1">Ingrediente</label>
+        <select name="ingredient_id"
+                x-ref="ingSelect"
+                hx-get="/manufacturers-search"
+                hx-trigger="change"
+                hx-target="#global-man-select"
+                required
+                class="text-sm w-full">
+          <option value="">Selecione...</option>
+          {% for ing in ingredients %}
+          <option value="{{ ing.id }}">{{ ing.name }}</option>
+          {% endfor %}
+        </select>
       </div>
 
-      <div class="sm:col-span-2 lg:col-span-4">
-        <button type="submit" class="btn btn-primary text-sm">💾 Registrar Cotação</button>
+      <!-- 3. Marca — repopulated by HTMX, cleared after save -->
+      <div class="w-full sm:flex-1">
+        <label class="text-xs text-gray-400 block mb-1">Marca</label>
+        <select id="global-man-select" x-ref="manSelect" name="manufacturer_id" required class="text-sm w-full">
+          <option value="">Aguardando ingrediente...</option>
+        </select>
+      </div>
+
+      <!-- 4. Preço — cleared after save -->
+      <div class="w-full sm:w-36 flex-shrink-0">
+        <label class="text-xs text-gray-400 block mb-1">Preço (R$)</label>
+        <div class="relative">
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm pointer-events-none select-none">R$</span>
+          <input type="number" name="last_price" step="0.01" min="0"
+                 x-ref="priceInput"
+                 placeholder="0,00" required
+                 class="text-sm w-full pl-9 font-mono text-blue-300" />
+        </div>
+      </div>
+
+      <div class="flex-shrink-0">
+        <button type="submit" class="btn btn-primary text-sm whitespace-nowrap">Salvar</button>
       </div>
     </form>
+
     <div id="global-add-result" class="mt-3 text-sm"></div>
-    <p class="text-xs text-gray-600 mt-2">
-      Após salvar, recarregue a página para ver a nova entrada no grupo do ingrediente.
+    <p class="text-xs text-gray-600 mt-2 flex items-center gap-1">
+      💡 Lance todos os itens da nota do mesmo fornecedor sem precisar selecioná-lo novamente.
     </p>
   </section>
 
