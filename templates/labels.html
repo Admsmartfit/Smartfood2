@@ -27,7 +27,9 @@
     cursor: move;
     user-select: none;
     white-space: pre;
-    line-height: 1.1;
+    line-height: 1;
+    padding: 0;
+    margin: 0;
     color: #000;
     transition: outline .05s;
   }
@@ -664,7 +666,7 @@ function labelMaker() {
 
     sampleText(type) {
       const batch = this.previewBatchIdx >= 0 ? this.batches[this.previewBatchIdx] : null;
-      const map = batch ? {
+      const raw = batch ? {
         product_name:        batch.product_name,
         batch_number:        batch.batch_number,
         production_date:     batch.production_date,
@@ -672,7 +674,14 @@ function labelMaker() {
         weight:              batch.weight_kg + ' kg',
         ingredients_summary: batch.ingredients_summary,
       } : SAMPLE;
-      return map[type] || type;
+      const prefixes = {
+        batch_number:        'Lote: ',
+        expiry_date:         'Validade: ',
+        production_date:     'Fabricação: ',
+        ingredients_summary: 'Ingredientes: ',
+      };
+      const val = raw[type] || type;
+      return (prefixes[type] || '') + val;
     },
 
     fieldStyle(f) {
@@ -721,9 +730,9 @@ function labelMaker() {
       const rect   = canvas.getBoundingClientRect();
       const s      = this.zoom;
 
-      // Where within the element the user clicked
-      const offsetX = e.clientX - rect.left - field.x * s;
-      const offsetY = e.clientY - rect.top  - field.y * s;
+      // Grab from top-left corner so field can be dragged to any edge of the label
+      const offsetX = 0;
+      const offsetY = 0;
 
       const onMove = (ev) => {
         const newX = (ev.clientX - rect.left - offsetX) / s;

@@ -305,14 +305,30 @@
             <input type="number" x-model="margemMinima" step="1" min="0" class="w-28 text-right" />
           </div>
           <div class="border-t border-gray-700 pt-3 mt-1">
-            <p class="text-xs text-gray-500 mb-2 uppercase tracking-wide font-semibold">Markup por Canal</p>
-            <div class="flex justify-between items-center gap-3">
-              <label class="text-sm text-gray-400 flex-1">Venda Direta (x)</label>
-              <input type="number" x-model="markup" step="0.1" min="1" class="w-28 text-right" />
+            <p class="text-xs text-gray-500 mb-2 uppercase tracking-wide font-semibold">Preço de Venda por Canal</p>
+            <div class="space-y-1">
+              <label class="text-xs text-gray-500">💰 Venda Direta</label>
+              <div class="flex items-center gap-2">
+                <div class="relative flex-1">
+                  <span class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs pointer-events-none">R$</span>
+                  <input type="number" x-model="precoVendaDesejado" step="0.01" min="0" placeholder="0,00"
+                         class="w-full pl-7 text-right text-sm" />
+                </div>
+                <span class="text-xs text-gray-500 whitespace-nowrap w-14 text-right"
+                      x-text="markupCalculado() > 0 ? 'x' + markupCalculado().toFixed(2) : '—'"></span>
+              </div>
             </div>
-            <div class="flex justify-between items-center gap-3 mt-2">
-              <label class="text-sm text-gray-400 flex-1">Distribuição (x)</label>
-              <input type="number" x-model="markupDistribuicao" step="0.1" min="0" placeholder="—" class="w-28 text-right" />
+            <div class="space-y-1 mt-3">
+              <label class="text-xs text-gray-500">🚛 Distribuição</label>
+              <div class="flex items-center gap-2">
+                <div class="relative flex-1">
+                  <span class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs pointer-events-none">R$</span>
+                  <input type="number" x-model="precoDistribuicaoDesejado" step="0.01" min="0" placeholder="—"
+                         class="w-full pl-7 text-right text-sm" />
+                </div>
+                <span class="text-xs text-gray-500 whitespace-nowrap w-14 text-right"
+                      x-text="markupDistribuicaoCalculado() > 0 ? 'x' + markupDistribuicaoCalculado().toFixed(2) : '—'"></span>
+              </div>
             </div>
           </div>
         </div>
@@ -347,12 +363,18 @@
               <span class="text-gray-200" x-text="'R$ ' + costPerUnit().toFixed(4)"></span>
             </div>
             <div class="flex justify-between text-sm font-semibold">
-              <span class="text-gray-300">💰 Venda Direta</span>
-              <span class="text-blue-300" x-text="'R$ ' + pricePerUnit().toFixed(2)"></span>
+              <span class="text-gray-300">💰 Venda Direta
+                <span class="text-xs font-normal text-gray-500 ml-1"
+                      x-text="markupCalculado() > 0 ? '(x' + markupCalculado().toFixed(2) + ')' : ''"></span>
+              </span>
+              <span class="text-blue-300" x-text="pricePerUnit() > 0 ? 'R$ ' + pricePerUnit().toFixed(2) : '—'"></span>
             </div>
-            <template x-if="parseFloat(markupDistribuicao) > 0">
+            <template x-if="parseFloat(precoDistribuicaoDesejado) > 0">
               <div class="flex justify-between text-sm font-semibold">
-                <span class="text-gray-300">🚛 Distribuição</span>
+                <span class="text-gray-300">🚛 Distribuição
+                  <span class="text-xs font-normal text-gray-500 ml-1"
+                        x-text="'(x' + markupDistribuicaoCalculado().toFixed(2) + ')'"></span>
+                </span>
                 <span class="text-purple-300" x-text="'R$ ' + priceDistribuicao().toFixed(2)"></span>
               </div>
             </template>
@@ -401,18 +423,18 @@ function recipeEditor() {
     recipeId:     null,
     savedRecipes: _d.recipes,
 
-    recipeName:         '',
-    nameError:          false,
-    markup:             2.5,
-    margemMinima:       20,
-    laborCost:          0,
-    energyCost:         0,
-    observacoes:        '',
-    rendimentoUnidades:    1,
-    pesoPorcaoG:           0,
-    perdaDesidratacaoPct:  0,
-    markupDistribuicao:    0,
-    saving:                false,
+    recipeName:               '',
+    nameError:                false,
+    precoVendaDesejado:       0,
+    precoDistribuicaoDesejado: 0,
+    margemMinima:             20,
+    laborCost:                0,
+    energyCost:               0,
+    observacoes:              '',
+    rendimentoUnidades:       1,
+    pesoPorcaoG:              0,
+    perdaDesidratacaoPct:     0,
+    saving:                   false,
     sections:           [{ name: 'Massa', yield: 0, instrucoes: '', items: [] }],
 
     // ── Load existing recipe ──────────────────────────────────────
@@ -424,7 +446,6 @@ function recipeEditor() {
         const data = await r.json();
         this.recipeId           = data.id;
         this.recipeName         = data.recipeName;
-        this.markup             = data.markup;
         this.margemMinima       = data.margemMinima;
         this.laborCost          = data.laborCost;
         this.energyCost         = data.energyCost;
@@ -432,7 +453,6 @@ function recipeEditor() {
         this.rendimentoUnidades   = data.rendimentoUnidades || 1;
         this.pesoPorcaoG          = data.pesoPorcaoG || 0;
         this.perdaDesidratacaoPct = data.perdaDesidratacaoPct || 0;
-        this.markupDistribuicao   = data.markupDistribuicao || 0;
 
         // Carrega seções e converte qtds do banco (kg/L) para a unidade de tela salva (g/ml)
         this.sections = data.sections.map(sec => ({
@@ -459,6 +479,15 @@ function recipeEditor() {
             return { ...item, baseUnit: base, displayUnit: disp, qty: displayQty };
           }),
         }));
+
+        // Converte markup armazenado → preço por unidade para exibição
+        const cost  = this.totalCost();
+        const units = this._activeUnits();
+        this.precoVendaDesejado = cost > 0
+          ? parseFloat(data.markup || 1) * cost / (units || 1) : 0;
+        this.precoDistribuicaoDesejado = (cost > 0 && data.markupDistribuicao > 0)
+          ? parseFloat(data.markupDistribuicao) * cost / (units || 1) : 0;
+
         this.nameError = false;
         toast(`"${data.recipeName}" carregada`);
       } catch (err) {
@@ -467,10 +496,11 @@ function recipeEditor() {
     },
 
     newRecipe() {
-      this.recipeId = null; this.recipeName = ''; this.markup = 2.5;
+      this.recipeId = null; this.recipeName = '';
+      this.precoVendaDesejado = 0; this.precoDistribuicaoDesejado = 0;
       this.margemMinima = 20; this.laborCost = 0; this.energyCost = 0;
       this.observacoes = ''; this.rendimentoUnidades = 1; this.pesoPorcaoG = 0;
-      this.perdaDesidratacaoPct = 0; this.markupDistribuicao = 0;
+      this.perdaDesidratacaoPct = 0;
       this.sections = [{ name: 'Massa', yield: 0, instrucoes: '', items: [] }];
       this.nameError = false;
     },
@@ -628,8 +658,20 @@ function recipeEditor() {
       return this.totalIngCost() + parseFloat(this.laborCost || 0) + parseFloat(this.energyCost || 0);
     },
 
+    markupCalculado() {
+      const tc = this.totalCost();
+      const units = this._activeUnits() || 1;
+      return tc > 0 ? parseFloat(this.precoVendaDesejado || 0) * units / tc : 0;
+    },
+
+    markupDistribuicaoCalculado() {
+      const tc = this.totalCost();
+      const units = this._activeUnits() || 1;
+      return tc > 0 ? parseFloat(this.precoDistribuicaoDesejado || 0) * units / tc : 0;
+    },
+
     suggestedPrice() {
-      return this.totalCost() * parseFloat(this.markup || 1);
+      return parseFloat(this.precoVendaDesejado || 0) * (this._activeUnits() || 1);
     },
 
     profitMargin() {
@@ -643,12 +685,9 @@ function recipeEditor() {
         : (parseInt(this.rendimentoUnidades) || 1);
     },
 
-    costPerUnit()         { return this.totalCost()      / (this._activeUnits() || 1); },
-    pricePerUnit()        { return this.suggestedPrice() / (this._activeUnits() || 1); },
-    priceDistribuicao()   {
-      const md = parseFloat(this.markupDistribuicao) || 0;
-      return md > 0 ? this.totalCost() * md / (this._activeUnits() || 1) : 0;
-    },
+    costPerUnit()       { return this.totalCost() / (this._activeUnits() || 1); },
+    pricePerUnit()      { return parseFloat(this.precoVendaDesejado) || 0; },
+    priceDistribuicao() { return parseFloat(this.precoDistribuicaoDesejado) || 0; },
 
     // ── Salvar ────────────────────────────────────────────────────
     async saveRecipe() {
@@ -657,13 +696,14 @@ function recipeEditor() {
       }
       this.saving = true;
       const payload = {
-        recipeName: this.recipeName, markup: this.markup,
+        recipeName: this.recipeName,
+        markup:            this.markupCalculado(),
+        markupDistribuicao: this.markupDistribuicaoCalculado(),
         margemMinima: this.margemMinima, laborCost: this.laborCost,
         energyCost: this.energyCost, observacoes: this.observacoes,
         rendimentoUnidades:   this._activeUnits(),
         pesoPorcaoG:          parseFloat(this.pesoPorcaoG) || 0,
         perdaDesidratacaoPct: parseFloat(this.perdaDesidratacaoPct) || 0,
-        markupDistribuicao:   parseFloat(this.markupDistribuicao) || 0,
         // Banco recebe sempre kg/L; displayUnit preservado para reabrir corretamente
         sections: this.sections.map(sec => ({
           ...sec,
