@@ -1063,6 +1063,19 @@ async def labels_page(request: Request, db: Session = Depends(get_db)):
         .all()
     )
     recipes = db.query(models.Recipe).order_by(models.Recipe.name).all()
+
+    # Build filtered ingredients list per recipe (Carnes, Laticínios, Carboidratos only)
+    allowed_cats = {"Carnes", "Laticínios", "Carboidratos"}
+    recipes_ingredients: dict[int, str] = {}
+    for r in recipes:
+        seen: list[str] = []
+        for sec in r.sections:
+            for item in sec.items:
+                ing = item.ingredient
+                if ing and ing.category in allowed_cats and ing.name not in seen:
+                    seen.append(ing.name)
+        recipes_ingredients[r.id] = ", ".join(seen)
+
     # Serialise for Alpine.js consumption
     templates_json = [
         {
@@ -1096,6 +1109,7 @@ async def labels_page(request: Request, db: Session = Depends(get_db)):
         "recipes": recipes,
         "templates_json": templates_json,
         "batches_json": batches_json,
+        "recipes_ingredients": recipes_ingredients,
     })
 
 
@@ -1215,7 +1229,7 @@ async def label_preview(
         }
 
     base_url = str(request.base_url)
-    print_data = label_service._build_print_data(template_data, batch_data, base_url)
+    print_data = label_service._build_print_data(batch_data, base_url)
     html = label_service.generate_preview_html(template_data, print_data)
     return HTMLResponse(content=html)
 
@@ -1255,7 +1269,7 @@ async def label_command(
                       "weight_kg": 0.0, "ingredients_summary": ""}
 
     base_url = str(request.base_url)
-    print_data = label_service._build_print_data(template_data, batch_data, base_url)
+    print_data = label_service._build_print_data(batch_data, base_url)
 
     if tpl.printer_type == "TSPL":
         cmd = label_service.generate_tspl(template_data, print_data)
@@ -1273,6 +1287,7 @@ async def print_label(
     template_id: int,
     request: Request,
     batch_id: int = Form(...),
+    quantity: int = Form(1),
     db: Session = Depends(get_db),
 ):
     tpl = db.query(models.LabelTemplate).filter_by(id=template_id).first()
@@ -1298,12 +1313,12 @@ async def print_label(
     }
 
     base_url = str(request.base_url)
-    print_data = label_service._build_print_data(template_data, batch_data, base_url)
+    print_data = label_service._build_print_data(batch_data, base_url)
 
     if tpl.printer_type == "TSPL":
-        cmd = label_service.generate_tspl(template_data, print_data)
+        cmd = label_service.generate_tspl(template_data, print_data, quantity)
     else:
-        cmd = label_service.generate_zpl(template_data, print_data)
+        cmd = label_service.generate_zpl(template_data, print_data, quantity)
 
     if not tpl.printer_ip:
         return HTMLResponse(

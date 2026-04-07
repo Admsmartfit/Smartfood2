@@ -36,10 +36,10 @@ def _mm(mm: float) -> int:
     return int(mm * DOTS_PER_MM)
 
 
-def _build_print_data(template_data: dict, batch_data: dict, base_url: str) -> dict:
+def _build_print_data(batch_data: dict, base_url: str) -> dict:
     """
-    Merge template defaults with batch-specific values and inject the dynamic
-    QR URL so every field name used in fields_config resolves to a string.
+    Build the print data dict from batch values and inject the dynamic QR URL
+    so every field name used in fields_config resolves to a string.
     """
     batch_id = batch_data.get("id", 0)
     data = {
@@ -77,7 +77,7 @@ DEFAULT_FIELDS_CONFIG = json.dumps([
 
 # ── ZPL (Zebra) ───────────────────────────────────────────────────────────────
 
-def generate_zpl(template_data: dict, print_data: dict) -> str:
+def generate_zpl(template_data: dict, print_data: dict, quantity: int = 1) -> str:
     """
     Return a ZPL II command string ready to send to a Zebra printer.
 
@@ -124,13 +124,14 @@ def generate_zpl(template_data: dict, print_data: dict) -> str:
                 f"^FD{text}^FS",
             ]
 
+    lines.append(f"^PQ{max(1, quantity)}")
     lines.append("^XZ")
     return "\n".join(lines)
 
 
 # ── TSPL (Elgin / Argox / TSC) ────────────────────────────────────────────────
 
-def generate_tspl(template_data: dict, print_data: dict) -> str:
+def generate_tspl(template_data: dict, print_data: dict, quantity: int = 1) -> str:
     """
     Return a TSPL command string ready to send to an Elgin/Argox/TSC printer.
     TSPL accepts SIZE in mm but TEXT/QRCODE positions in dots (203 DPI).
@@ -142,6 +143,7 @@ def generate_tspl(template_data: dict, print_data: dict) -> str:
         f"SIZE {w} mm, {h} mm",
         "GAP 2 mm, 0 mm",
         "CLS",
+        "CODEPAGE UTF-8",
     ]
 
     fields = json.loads(template_data.get("fields_config") or "[]")
@@ -163,7 +165,7 @@ def generate_tspl(template_data: dict, print_data: dict) -> str:
             scale = max(1, int(field.get("font_size_mm", 3) / 2))
             lines.append(f'TEXT {x},{y},"0",0,{scale},{scale},"{text}"')
 
-    lines.append("PRINT 1,1")
+    lines.append(f"PRINT {max(1, quantity)},1")
     return "\n".join(lines)
 
 

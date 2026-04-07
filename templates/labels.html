@@ -17,7 +17,7 @@
     background: #ffffff;
     box-shadow: 0 8px 40px rgba(0,0,0,.6);
     position: relative;
-    overflow: visible;
+    overflow: hidden;
     transition: width .2s, height .2s;
   }
 
@@ -26,12 +26,13 @@
     position: absolute;
     cursor: move;
     user-select: none;
-    white-space: pre;
-    line-height: 1;
+    white-space: nowrap;
+    line-height: 0.85;
     padding: 0;
     margin: 0;
     color: #000;
     transition: outline .05s;
+    transform-origin: top left;
   }
   .canvas-field:hover        { outline: 1px dashed #93c5fd; outline-offset: 2px; }
   .canvas-field.selected     { outline: 2px solid #3b82f6 !important; outline-offset: 2px; }
@@ -402,7 +403,7 @@
         <form hx-post="/batches"
               hx-target="#batch-table-body"
               hx-swap="afterbegin"
-              @htmx:after-request="if($event.detail.successful){ $refs.batchForm.reset(); generateBatchNumber(); calcExpiry(); toast('Lote registrado'); }"
+              @htmx:after-request="if($event.detail.successful){ addBatchFromResponse($event, $refs.batchForm); ingredientsSummary=''; selectedRecipeId=''; }"
               x-ref="batchForm"
               class="grid grid-cols-2 sm:grid-cols-3 gap-3">
 
@@ -421,12 +422,16 @@
           <!-- Produto puxado das receitas -->
           <div>
             <label class="text-xs text-gray-400">Produto (Receita)</label>
-            <select name="product_name" required class="text-sm">
-              <option value="">— selecione —</option>
+            <select name="product_name" required class="text-sm"
+                    @change="let opt = $event.target.options[$event.target.selectedIndex];
+                             selectedRecipeId = opt.dataset.id || '';
+                             ingredientsSummary = recipesIngredients[opt.dataset.id] || '';">
+              <option value="" data-id="">— selecione —</option>
               {% for r in recipes %}
-              <option value="{{ r.name }}">{{ r.name }}</option>
+              <option value="{{ r.name }}" data-id="{{ r.id }}">{{ r.name }}</option>
               {% endfor %}
             </select>
+            <input type="hidden" name="recipe_id" :value="selectedRecipeId" />
           </div>
 
           <!-- Validade calculada -->
@@ -455,8 +460,14 @@
             </select>
           </div>
           <div class="col-span-2 sm:col-span-3">
-            <label class="text-xs text-gray-400">Ingredientes (resumo p/ etiqueta)</label>
-            <input type="text" name="ingredients_summary" placeholder="Frango, Alho, Azeite, Sal" />
+            <label class="text-xs text-gray-400 flex items-center gap-1.5">
+              Ingredientes (resumo p/ etiqueta)
+              <span x-show="ingredientsSummary" x-cloak
+                    class="text-xs text-green-500 font-normal">✓ preenchido automaticamente</span>
+            </label>
+            <input type="text" name="ingredients_summary"
+                   x-model="ingredientsSummary"
+                   placeholder="Frango, Alho, Azeite, Sal" />
           </div>
 
           <!-- QR URLs -->
@@ -488,51 +499,91 @@
 
         <!-- Print section -->
         <section class="card p-4">
-          <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
+          <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-4">
             🖨️ Imprimir via TCP
           </h2>
-          <form hx-post
-                :action="'/labels/' + (currentId || 0) + '/print'"
-                hx-target="#print-result"
-                hx-swap="innerHTML"
-                @htmx:after-request="$event.detail.successful && toast('Enviado para impressora')"
-                class="space-y-2">
-            <div>
-              <label class="text-xs text-gray-400">Template</label>
-              <select name="template_select" class="text-sm"
-                      @change="loadTemplateById(parseInt($event.target.value))">
-                <option value="0">— selecione —</option>
-                <template x-for="t in savedTemplates" :key="t.id">
-                  <option :value="t.id" :selected="currentId === t.id" x-text="t.name"></option>
+
+          <div class="flex flex-col lg:flex-row gap-5">
+
+            <!-- Form column -->
+            <form hx-post
+                  :action="'/labels/' + (currentId || 0) + '/print'"
+                  hx-target="#print-result"
+                  hx-swap="innerHTML"
+                  @htmx:after-request="$event.detail.successful && toast('Enviado para impressora')"
+                  class="space-y-3 flex-1">
+              <div>
+                <label class="text-xs text-gray-400 block mb-1">Template</label>
+                <select name="template_select" class="text-sm w-full"
+                        @change="loadTemplateById(parseInt($event.target.value)); fetchPrintPreview()">
+                  <option value="0">— selecione —</option>
+                  <template x-for="t in savedTemplates" :key="t.id">
+                    <option :value="t.id" :selected="currentId === t.id" x-text="t.name"></option>
+                  </template>
+                </select>
+              </div>
+              <div>
+                <label class="text-xs text-gray-400 block mb-1">Lote</label>
+                <select name="batch_id" x-model="printBatchId" @change="fetchPrintPreview()"
+                        required class="text-sm w-full">
+                  <option value="">— selecione —</option>
+                  <template x-for="b in batches" :key="b.id">
+                    <option :value="b.id" x-text="b.batch_number + ' — ' + b.product_name"></option>
+                  </template>
+                </select>
+              </div>
+              <div>
+                <label class="text-xs text-gray-400 block mb-1">Quantidade de Cópias</label>
+                <input type="number" name="quantity" x-model.number="printQty"
+                       min="1" max="5000" class="text-sm w-full font-bold text-blue-300" />
+              </div>
+              <button type="submit"
+                      :disabled="!currentId || !printBatchId || printQty < 1"
+                      class="btn btn-primary btn-full text-sm"
+                      :title="!currentId ? 'Selecione um template primeiro' : ''">
+                🖨️ Enviar para Impressora
+              </button>
+              <div id="print-result"></div>
+            </form>
+
+            <!-- Preview column -->
+            <div class="flex-1 dot-grid border border-gray-700 rounded-xl flex flex-col relative overflow-hidden" style="min-height:350px; max-height:600px">
+
+              <div class="absolute top-0 left-0 right-0 p-3 bg-gray-900/80 backdrop-blur-sm border-b border-gray-700 z-10 flex justify-between items-center">
+                <span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Preview de Impressão</span>
+                <span x-show="printQty > 1" x-cloak class="text-xs font-bold text-blue-400 bg-blue-900/30 px-2 py-0.5 rounded-md">
+                  <span x-text="printQty"></span> cópias
+                </span>
+              </div>
+
+              <div x-show="!printPreviewHtml" class="flex-1 flex items-center justify-center text-center text-gray-500 text-xs p-6 mt-10">
+                Selecione um <strong class="text-gray-400 mx-1">Template</strong> e um <strong class="text-gray-400 mx-1">Lote</strong><br>para pré-visualizar a impressão.
+              </div>
+
+              <div x-show="printPreviewHtml" class="flex-1 overflow-y-auto p-6 pt-16 flex flex-wrap gap-4 justify-center content-start">
+                <template x-for="i in Math.min(parseInt(printQty) || 1, 10)" :key="i">
+                  <div x-html="printPreviewHtml"
+                       class="shadow-xl flex-shrink-0"
+                       style="transform:scale(0.85);transform-origin:top center;margin-bottom:-10px"></div>
                 </template>
-              </select>
+                <div x-show="(parseInt(printQty) || 1) > 10"
+                     class="w-full text-center text-xs text-gray-500 mt-4 py-3 border border-dashed border-gray-700 rounded-lg bg-gray-800/30">
+                  + <span x-text="printQty - 10"></span> etiqueta(s) na fila de impressão...
+                </div>
+              </div>
+
             </div>
-            <div>
-              <label class="text-xs text-gray-400">Lote</label>
-              <select name="batch_id" required class="text-sm">
-                <option value="">— selecione —</option>
-                {% for b in batches %}
-                <option value="{{ b.id }}">{{ b.batch_number }} — {{ b.product_name }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <button type="submit"
-                    :disabled="!currentId"
-                    class="btn btn-primary btn-full text-sm"
-                    :title="!currentId ? 'Selecione um template primeiro' : ''">
-              Enviar para Impressora
-            </button>
-          </form>
-          <div id="print-result" class="mt-2"></div>
+
+          </div>
 
           <!-- ZPL/TSPL command viewer -->
-          <details class="mt-3 group/cmd" x-show="currentId">
+          <details class="mt-4 group/cmd" x-show="currentId && printBatchId">
             <summary class="cursor-pointer text-xs text-gray-500 hover:text-gray-300 select-none list-none">
               ▶ Ver comando ZPL/TSPL
             </summary>
             <div id="command-output" class="mt-2"></div>
             <button @click="showCommand()" class="btn btn-secondary btn-sm mt-1 text-xs">
-              Gerar Comando
+              Gerar Código
             </button>
           </details>
         </section>
@@ -622,9 +673,17 @@ function labelMaker() {
     zoom:             7,        // px per mm
     previewBatchIdx:  -1,
     showTemplates:    true,
-    savedTemplates:   {{ templates_json | tojson }},
-    batches:          {{ batches_json | tojson }},
-    availableFields:  AVAILABLE_FIELDS,
+    savedTemplates:      {{ templates_json | tojson }},
+    batches:             {{ batches_json | tojson }},
+    availableFields:     AVAILABLE_FIELDS,
+    recipesIngredients:  {{ recipes_ingredients | tojson }},
+    ingredientsSummary:  '',
+    selectedRecipeId:    '',
+
+    // ── Print state ──────────────────────────────────────────────
+    printBatchId:     '',
+    printQty:         1,
+    printPreviewHtml: '',
 
     // ── Batch form state ─────────────────────────────────────────
     batchNumber:   '',
@@ -645,7 +704,37 @@ function labelMaker() {
       }
     },
 
+    // ── Print preview ─────────────────────────────────────────────
+    async fetchPrintPreview() {
+      if (!this.currentId || !this.printBatchId) { this.printPreviewHtml = ''; return; }
+      try {
+        const res = await fetch(`/labels/${this.currentId}/preview?batch_id=${this.printBatchId}`);
+        this.printPreviewHtml = res.ok ? await res.text() : '';
+      } catch (_) { this.printPreviewHtml = ''; }
+    },
+
     // ── Batch helpers ─────────────────────────────────────────────
+    addBatchFromResponse(event, form) {
+      const fd = new FormData(form);
+      // Parse batch ID from the returned HTML row: id="batch-123"
+      const doc = new DOMParser().parseFromString(event.detail.xhr.responseText, 'text/html');
+      const row = doc.querySelector('[id^="batch-"]');
+      const batchId = row ? parseInt(row.id.split('-')[1]) : Date.now();
+      this.batches.unshift({
+        id:                  batchId,
+        batch_number:        this.batchNumber,
+        product_name:        fd.get('product_name') || '',
+        production_date:     new Date().toLocaleDateString('pt-BR'),
+        expiry_date:         this.expiryDate.split('-').reverse().join('/'),
+        weight_kg:           parseFloat(fd.get('weight_kg')) || 0,
+        ingredients_summary: fd.get('ingredients_summary') || '',
+      });
+      form.reset();
+      this.generateBatchNumber();
+      this.calcExpiry();
+      toast('Lote registrado');
+    },
+
     generateBatchNumber() {
       const d = new Date();
       const yyyy = d.getFullYear();
@@ -730,15 +819,16 @@ function labelMaker() {
       const rect   = canvas.getBoundingClientRect();
       const s      = this.zoom;
 
-      // Grab from top-left corner so field can be dragged to any edge of the label
-      const offsetX = 0;
-      const offsetY = 0;
+      // Calcula onde o mouse clicou dentro do próprio elemento
+      const elRect = e.currentTarget.getBoundingClientRect();
+      const offsetX = e.clientX - elRect.left;
+      const offsetY = e.clientY - elRect.top;
 
       const onMove = (ev) => {
         const newX = (ev.clientX - rect.left - offsetX) / s;
         const newY = (ev.clientY - rect.top  - offsetY) / s;
-        field.x = Math.max(0, Math.min(Math.round(newX * 10) / 10, this.widthMm  - 0.5));
-        field.y = Math.max(0, Math.min(Math.round(newY * 10) / 10, this.heightMm - 0.5));
+        field.x = Math.round(newX * 10) / 10;
+        field.y = Math.round(newY * 10) / 10;
         ev.preventDefault();
       };
       const onUp = () => {
