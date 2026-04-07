@@ -242,15 +242,31 @@
                 <tbody class="divide-y divide-gray-800/50">
                   {% for e in g.entries %}
                   {% set fc = (100 / e.manufacturer.yield_percentage) | round(3) if e.manufacturer and e.manufacturer.yield_percentage > 0 else 1.0 %}
-                  <tr id="cat-row-{{ e.id }}" class="hover:bg-gray-800/30">
+                  <tr id="cat-row-{{ e.id }}" class="hover:bg-gray-800/30"
+                      x-data="{ editing: false, price: '{{ e.last_price or 0 }}' }">
                     <td class="py-2.5 pr-3 text-white font-medium">
                       {{ e.manufacturer.brand_name }}
                       <span class="text-gray-600 text-xs block">rend. {{ e.manufacturer.yield_percentage }}%</span>
                     </td>
                     <td class="py-2.5 pr-3 text-gray-300">{{ e.supplier.name }}</td>
                     <td class="py-2.5 pr-3 font-mono text-gray-500 text-xs hidden sm:table-cell">{{ fc }}</td>
-                    <td class="py-2.5 pr-3 text-right font-mono font-semibold text-blue-300">
-                      R$ {{ "%.2f"|format(e.last_price or 0) }}
+                    <td class="py-2.5 pr-3 text-right font-mono">
+                      <div x-show="!editing"
+                           @click="editing = true"
+                           class="cursor-pointer hover:bg-blue-500/10 rounded px-1 py-0.5 font-semibold text-blue-300 transition-colors"
+                           title="Clique para editar">
+                        R$ <span x-text="parseFloat(price).toFixed(2)"></span>
+                      </div>
+                      <div x-show="editing" x-cloak class="flex items-center justify-end gap-1">
+                        <input type="number" step="0.01" x-model="price"
+                               class="num-sm w-20 text-right"
+                               style="border-color:#3b82f6;color:#93c5fd"
+                               @keydown.enter="savePrice({{ e.id }}, price); editing = false"
+                               @keydown.escape="editing = false"
+                               x-init="$watch('editing', v => v && $nextTick(() => $el.focus()))">
+                        <button @click="savePrice({{ e.id }}, price); editing = false"
+                                class="icon-btn text-green-400 hover:text-green-300 text-xs">OK</button>
+                      </div>
                     </td>
                     <td class="py-2.5 text-right whitespace-nowrap">
                       {% if e.updated_at %}
@@ -297,4 +313,20 @@
   </div>
 
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function savePrice(id, newPrice) {
+  const body = new FormData();
+  body.append('last_price', newPrice);
+  try {
+    const r = await fetch(`/catalog/${id}`, { method: 'PUT', body });
+    if (!r.ok) throw new Error('Erro ao salvar');
+    toast('Preço atualizado');
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+</script>
 {% endblock %}

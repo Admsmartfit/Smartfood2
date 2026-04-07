@@ -43,10 +43,10 @@
       <form hx-post="/ingredients"
             hx-target="#ingredients-list"
             hx-swap="afterbegin"
-            @htmx:after-request="$event.detail.successful && ($refs.ingForm.reset(), toast('Ingrediente cadastrado'))"
+            @htmx:after-request="$event.detail.successful && ($refs.ingForm.reset(), searchIng = '', toast('Ingrediente cadastrado'))"
             x-ref="ingForm"
             class="space-y-2">
-        <input type="text" name="name" placeholder="Nome (ex: Peito de Frango)" required />
+        <input type="text" name="name" x-model="searchIng" placeholder="Nome (ex: Peito de Frango)" required />
         <div class="grid grid-cols-2 gap-2">
           <input type="text" name="unit" placeholder="kg, L, un" required />
           <select name="category" class="text-sm">
@@ -66,7 +66,8 @@
         {% for ing in ingredients %}
         <div id="ing-{{ ing.id }}" class="item-row flex items-center gap-2 p-2 rounded-lg"
              style="background:var(--card); border:1px solid var(--border)"
-             x-data="{editing:false, n:'{{ ing.name | replace("'","&#39;") }}', u:'{{ ing.unit | replace("'","&#39;") }}', cat:'{{ (ing.category or "Outros") | replace("'","&#39;") }}'}">
+             x-data="{editing:false, n:'{{ ing.name | replace("'","&#39;") }}', u:'{{ ing.unit | replace("'","&#39;") }}', cat:'{{ (ing.category or "Outros") | replace("'","&#39;") }}'}"
+             x-show="!searchIng || n.toLowerCase().includes(searchIng.toLowerCase())">
 
           <div x-show="!editing" class="flex-1 flex items-center justify-between min-h-[44px]">
             <span class="text-sm text-white">
@@ -111,7 +112,7 @@
       <form hx-post="/manufacturers"
             hx-target="#manufacturers-list"
             hx-swap="afterbegin"
-            @htmx:after-request="$event.detail.successful && ($refs.manForm.reset(), toast('Marca cadastrada'))"
+            @htmx:after-request="$event.detail.successful && ($refs.manForm.reset(), searchMan = '', toast('Marca cadastrada'))"
             x-ref="manForm"
             class="space-y-2">
         <select name="ingredient_id" class="ingredient-select" required>
@@ -120,7 +121,7 @@
           <option value="{{ ing.id }}">{{ ing.name }}</option>
           {% endfor %}
         </select>
-        <input type="text" name="brand_name" placeholder="Marca (ex: Seara)" required />
+        <input type="text" name="brand_name" x-model="searchMan" placeholder="Marca (ex: Seara)" required />
         <div class="grid grid-cols-2 gap-2">
           <div>
             <label class="text-xs text-gray-500">Rendimento (%)</label>
@@ -138,7 +139,8 @@
         {% for m in manufacturers %}
         <div id="man-{{ m.id }}" class="item-row flex items-center gap-2 p-2 rounded-lg"
              style="background:var(--card); border:1px solid var(--border)"
-             x-data="{editing:false, b:'{{ m.brand_name | replace("'","&#39;") }}', y:{{ m.yield_percentage }}, q:{{ m.quality_score }}, ingId:'{{ m.ingredient_id }}', ingName() { return (window.ingredientNames||{})[+this.ingId]||'?'; }}">
+             x-data="{editing:false, b:'{{ m.brand_name | replace("'","&#39;") }}', y:{{ m.yield_percentage }}, q:{{ m.quality_score }}, ingId:'{{ m.ingredient_id }}', ingName() { return (window.ingredientNames||{})[+this.ingId]||'?'; }}"
+             x-show="!searchMan || b.toLowerCase().includes(searchMan.toLowerCase())">
 
           <div x-show="!editing" class="flex-1 flex items-center justify-between min-h-[44px]">
             <span class="text-sm text-white">
@@ -186,10 +188,10 @@
       <form hx-post="/suppliers"
             hx-target="#suppliers-list"
             hx-swap="afterbegin"
-            @htmx:after-request="$event.detail.successful && ($refs.supForm.reset(), toast('Fornecedor cadastrado'))"
+            @htmx:after-request="$event.detail.successful && ($refs.supForm.reset(), searchSup = '', toast('Fornecedor cadastrado'))"
             x-ref="supForm"
             class="space-y-2">
-        <input type="text" name="name" placeholder="Nome do Fornecedor" required />
+        <input type="text" name="name" x-model="searchSup" placeholder="Nome do Fornecedor" required />
         <input type="text" name="contact_info" placeholder="Contato (Email / Telefone)" />
 
         <div>
@@ -215,7 +217,8 @@
              style="background:var(--card);border:1px solid var(--border)"
              data-cats='{{ s.supplier_categories | map(attribute="category") | list | tojson }}'
              x-data="{editing:false, n:'{{ s.name | replace("'","&#39;") }}', c:'{{ (s.contact_info or "") | replace("'","&#39;") }}', cats:[]}"
-             x-init="cats = JSON.parse($el.dataset.cats)">
+             x-init="cats = JSON.parse($el.dataset.cats)"
+             x-show="!searchSup || n.toLowerCase().includes(searchSup.toLowerCase())">
 
           <!-- View mode -->
           <div x-show="!editing" class="flex items-start justify-between gap-2 min-h-[44px]">
@@ -375,6 +378,10 @@
 
 function crudApp() {
   return {
+    searchIng: '',
+    searchMan: '',
+    searchSup: '',
+
     async _put(url, body) {
       return fetch(url, {
         method: 'PUT',
