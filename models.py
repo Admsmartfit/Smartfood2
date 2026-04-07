@@ -10,6 +10,7 @@ class Ingredient(Base):
     name = Column(String, index=True, nullable=False)
     unit = Column(String, nullable=False) # e.g., kg, L, un
     category = Column(String, default="Outros")
+    current_stock = Column(Float, default=0.0)
 
     manufacturers = relationship("IngredientManufacturer", back_populates="ingredient")
     catalog_entries = relationship("SupplierCatalog", back_populates="ingredient")
@@ -77,6 +78,7 @@ class Recipe(Base):
     peso_porcao_g = Column(Float, default=0.0)
     perda_desidratacao_pct = Column(Float, default=0.0)   # % weight loss in freezer
     markup_distribuicao = Column(Float, default=0.0)      # markup for distribution channel
+    current_stock_units = Column(Integer, default=0)      # ready-to-sell frozen units
 
     sections = relationship("RecipeSection", back_populates="recipe")
     batches = relationship("ProductionBatch", back_populates="recipe")
@@ -171,3 +173,61 @@ class ProductionBatch(Base):
 
     recipe = relationship("Recipe", back_populates="batches")
     label_template = relationship("LabelTemplate", back_populates="batches")
+
+
+# ── Module 5: Stock Control ───────────────────────────────────────────────────
+
+class StockMovement(Base):
+    __tablename__ = "stock_movements"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    type        = Column(String, nullable=False)   # 'IN' or 'OUT'
+    item_type   = Column(String, nullable=False)   # 'INGREDIENT' or 'PRODUCT'
+    item_id     = Column(Integer, nullable=False)
+    quantity    = Column(Float, nullable=False)
+    date        = Column(DateTime, default=datetime.utcnow)
+    description = Column(String, default="")
+
+
+# ── Module 6: Customers & Sales Orders ───────────────────────────────────────
+
+class Customer(Base):
+    __tablename__ = "customers"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    name       = Column(String, index=True, nullable=False)
+    phone      = Column(String, default="")
+    email      = Column(String, default="")
+    address    = Column(String, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    orders = relationship("SalesOrder", back_populates="customer",
+                          cascade="all, delete-orphan")
+
+
+class SalesOrder(Base):
+    __tablename__ = "sales_orders"
+
+    id           = Column(Integer, primary_key=True, index=True)
+    customer_id  = Column(Integer, ForeignKey("customers.id"), nullable=False)
+    order_date   = Column(DateTime, default=datetime.utcnow)
+    status       = Column(String, default="PENDING")  # PENDING | DELIVERED | CANCELED
+    total_amount = Column(Float, default=0.0)
+    notes        = Column(Text, default="")
+
+    customer = relationship("Customer", back_populates="orders")
+    items    = relationship("SalesOrderItem", back_populates="order",
+                            cascade="all, delete-orphan")
+
+
+class SalesOrderItem(Base):
+    __tablename__ = "sales_order_items"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    order_id   = Column(Integer, ForeignKey("sales_orders.id"), nullable=False)
+    recipe_id  = Column(Integer, ForeignKey("recipes.id"), nullable=False)
+    quantity   = Column(Integer, nullable=False)
+    unit_price = Column(Float, nullable=False)
+
+    order  = relationship("SalesOrder", back_populates="items")
+    recipe = relationship("Recipe")

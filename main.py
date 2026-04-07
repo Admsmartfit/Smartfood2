@@ -23,6 +23,9 @@ _MIGRATIONS = [
     "ALTER TABLE bom_items ADD COLUMN display_unit TEXT DEFAULT ''",
     "ALTER TABLE recipes ADD COLUMN perda_desidratacao_pct REAL DEFAULT 0.0",
     "ALTER TABLE recipes ADD COLUMN markup_distribuicao REAL DEFAULT 0.0",
+    # Module 5 & 6
+    "ALTER TABLE ingredients ADD COLUMN current_stock REAL DEFAULT 0.0",
+    "ALTER TABLE recipes ADD COLUMN current_stock_units INTEGER DEFAULT 0",
 ]
 with engine.connect() as _conn:
     for _sql in _MIGRATIONS:
@@ -1361,6 +1364,20 @@ async def create_batch(
         recipe_id=recipe_id or None,
     )
     db.add(batch)
+    db.flush()
+
+    # ── Auto stock-in: increment frozen product count ────────────────────────
+    if recipe_id:
+        recipe_obj = db.query(models.Recipe).filter_by(id=recipe_id).first()
+        if recipe_obj:
+            units = max(1, recipe_obj.rendimento_unidades or 1)
+            recipe_obj.current_stock_units = (recipe_obj.current_stock_units or 0) + units
+            db.add(models.StockMovement(
+                type="IN", item_type="PRODUCT", item_id=recipe_id,
+                quantity=units,
+                description=f"Produção Lote {batch_number}",
+            ))
+
     db.commit()
     db.refresh(batch)
     expiry_str = batch.expiry_date.strftime("%d/%m/%Y")
@@ -1399,6 +1416,349 @@ async def qr_redirect(batch_id: int, db: Session = Depends(get_db)):
         batch.promo_url,
     )
     return RedirectResponse(url=url, status_code=302)
+
+
+# ── Module 5: Estoque ────────────────────────────────────────────────────────
+
+@app.get("/estoque", response_class=HTMLResponse)
+async def estoque_page(request: Request, db: Session = Depends(get_db)):
+    ingredients = db.query(models.Ingredient).order_by(models.Ingredient.name).all()
+    recipes = db.query(models.Recipe).order_by(models.Recipe.name).all()
+    movements = (
+        db.query(models.StockMovement)
+        .order_by(models.StockMovement.date.desc())
+        .limit(50)
+        .all()
+    )
+    return templates.TemplateResponse("estoque.html", {
+        "request": request,
+        "ingredients": ingredients,
+        "recipes": recipes,
+        "movements": movements,
+        "active_page": "estoque",
+    })
+
+
+@app.post("/api/stock/adjust", response_class=HTMLResponse)
+async def stock_adjust(
+    item_type: str = Form(...),   # INGREDIENT or PRODUCT
+    item_id: int = Form(...),
+    quantity: float = Form(...),  # positive = IN, negative = OUT
+    description: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    move_type = "IN" if quantity >= 0 else "OUT"
+    abs_qty = abs(quantity)
+
+    if item_type == "INGREDIENT":
+        ing = db.query(models.Ingredient).filter_by(id=item_id).first()
+        if not ing:
+            raise HTTPException(404)
+        ing.current_stock = max(0.0, (ing.current_stock or 0.0) + quantity)
+        db.add(models.StockMovement(
+            type=move_type, item_type="INGREDIENT", item_id=item_id,
+            quantity=abs_qty, description=description or f"Ajuste manual",
+        ))
+        db.commit()
+        return HTMLResponse(
+            f'<span class="font-mono text-blue-300">{ing.current_stock:.3f}</span>',
+            headers={"HX-Trigger": '{"showToast":{"msg":"Estoque atualizado","type":"success"}}'},
+        )
+    else:
+        recipe = db.query(models.Recipe).filter_by(id=item_id).first()
+        if not recipe:
+            raise HTTPException(404)
+        recipe.current_stock_units = max(0, (recipe.current_stock_units or 0) + int(quantity))
+        db.add(models.StockMovement(
+            type=move_type, item_type="PRODUCT", item_id=item_id,
+            quantity=abs_qty, description=description or f"Ajuste manual",
+        ))
+        db.commit()
+        return HTMLResponse(
+            f'<span class="font-mono text-blue-300">{recipe.current_stock_units}</span>',
+            headers={"HX-Trigger": '{"showToast":{"msg":"Estoque atualizado","type":"success"}}'},
+        )
+
+
+# ── Module 6: Clientes ───────────────────────────────────────────────────────
+
+def _customer_row(c: models.Customer, orders: list) -> str:
+    """Render one customer accordion row (view + order history)."""
+    n = c.name.replace("'", "&#39;")
+    ph = (c.phone or "").replace("'", "&#39;")
+    em = (c.email or "").replace("'", "&#39;")
+    addr = (c.address or "").replace("'", "&#39;")
+    order_rows = ""
+    for o in orders:
+        status_color = {
+            "PENDING": "#fcd34d",
+            "DELIVERED": "#86efac",
+            "CANCELED": "#fca5a5",
+        }.get(o.status, "#9ca3af")
+        status_label = {
+            "PENDING": "Pendente",
+            "DELIVERED": "Entregue",
+            "CANCELED": "Cancelado",
+        }.get(o.status, o.status)
+        items_txt = ", ".join(
+            f"{oi.recipe.name if oi.recipe else '?'} x{oi.quantity}"
+            for oi in o.items
+        )
+        order_rows += (
+            f'<div class="flex flex-wrap items-center gap-2 py-2 border-b border-gray-800 last:border-0 text-xs">'
+            f'  <span class="text-gray-400">{o.order_date.strftime("%d/%m/%Y")}</span>'
+            f'  <span class="flex-1 text-gray-300">{items_txt or "—"}</span>'
+            f'  <span class="font-mono text-blue-300">R$ {o.total_amount:.2f}</span>'
+            f'  <span class="px-2 py-0.5 rounded-full text-xs font-medium"'
+            f'        style="color:{status_color};background:{status_color}22">{status_label}</span>'
+            f'</div>'
+        )
+    if not order_rows:
+        order_rows = '<p class="text-xs text-gray-500 py-2">Nenhum pedido ainda.</p>'
+
+    return (
+        f'<div id="cust-{c.id}" class="card p-0 overflow-hidden"'
+        f' x-data="{{open:false,editing:false,n:\'{n}\',ph:\'{ph}\',em:\'{em}\',addr:\'{addr}\'}}">'
+        # Header
+        f'<div class="flex items-center gap-3 px-4 py-3 cursor-pointer" @click="open=!open">'
+        f'  <span class="text-blue-400 text-base">👤</span>'
+        f'  <div class="flex-1 min-w-0">'
+        f'    <p class="text-sm font-medium text-white" x-text="n"></p>'
+        f'    <p class="text-xs text-gray-400" x-text="(ph ? ph : \'\') + (em ? \' · \'+em : \'\')"></p>'
+        f'  </div>'
+        f'  <span class="text-xs text-gray-500">{len(orders)} pedido{"s" if len(orders) != 1 else ""}</span>'
+        f'  <span class="text-gray-500 text-sm" x-text="open ? \'▲\' : \'▼\'"></span>'
+        f'</div>'
+        # Accordion body
+        f'<div x-show="open" x-cloak class="border-t border-gray-700 px-4 py-3 space-y-3">'
+        # Edit form (inline)
+        f'  <div x-show="editing" x-cloak class="space-y-2 pb-3 border-b border-gray-700">'
+        f'    <div class="grid grid-cols-2 gap-2">'
+        f'      <input x-model="n" class="field text-sm" placeholder="Nome" />'
+        f'      <input x-model="ph" class="field text-sm" placeholder="Telefone" />'
+        f'      <input x-model="em" class="field text-sm" placeholder="E-mail" />'
+        f'      <input x-model="addr" class="field text-sm" placeholder="Endereço" />'
+        f'    </div>'
+        f'    <div class="flex gap-2">'
+        f'      <button @click="saveCust({c.id},n,ph,em,addr,$el)" class="btn btn-primary btn-sm">💾 Salvar</button>'
+        f'      <button @click="editing=false" class="btn btn-secondary btn-sm">Cancelar</button>'
+        f'    </div>'
+        f'  </div>'
+        # View actions
+        f'  <div x-show="!editing" class="flex gap-2 flex-wrap text-xs text-gray-400">'
+        f'    <span x-show="addr" x-text="\'📍 \'+addr"></span>'
+        f'    <button @click="editing=true" class="btn btn-secondary btn-sm ml-auto">✏️ Editar</button>'
+        f'    <button hx-delete="/clientes/{c.id}" hx-target="#cust-{c.id}" hx-swap="outerHTML"'
+        f'            hx-confirm="Excluir {n}? Os pedidos também serão removidos."'
+        f'            class="btn btn-danger btn-sm">🗑️</button>'
+        f'  </div>'
+        # Order history
+        f'  <div>'
+        f'    <p class="text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wide">Histórico de Pedidos</p>'
+        f'    {order_rows}'
+        f'  </div>'
+        f'</div>'
+        f'</div>'
+    )
+
+
+@app.get("/clientes", response_class=HTMLResponse)
+async def clientes_page(request: Request, db: Session = Depends(get_db)):
+    customers = db.query(models.Customer).order_by(models.Customer.name).all()
+    return templates.TemplateResponse("clientes.html", {
+        "request": request,
+        "customers": customers,
+        "active_page": "clientes",
+    })
+
+
+@app.post("/clientes", response_class=HTMLResponse)
+async def create_customer(
+    name: str = Form(...),
+    phone: str = Form(""),
+    email: str = Form(""),
+    address: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    c = models.Customer(name=name, phone=phone, email=email, address=address)
+    db.add(c)
+    db.commit()
+    db.refresh(c)
+    return HTMLResponse(content=_customer_row(c, []), status_code=201)
+
+
+@app.put("/clientes/{cust_id}", response_class=HTMLResponse)
+async def update_customer(
+    cust_id: int,
+    name: str = Form(...),
+    phone: str = Form(""),
+    email: str = Form(""),
+    address: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    c = db.query(models.Customer).filter_by(id=cust_id).first()
+    if not c:
+        raise HTTPException(404)
+    c.name = name
+    c.phone = phone
+    c.email = email
+    c.address = address
+    db.commit()
+    db.refresh(c)
+    orders = db.query(models.SalesOrder).filter_by(customer_id=cust_id).order_by(models.SalesOrder.order_date.desc()).all()
+    return HTMLResponse(content=_customer_row(c, orders))
+
+
+@app.delete("/clientes/{cust_id}", response_class=HTMLResponse)
+async def delete_customer(cust_id: int, db: Session = Depends(get_db)):
+    c = db.query(models.Customer).filter_by(id=cust_id).first()
+    if c:
+        db.delete(c)
+        db.commit()
+    return HTMLResponse("")
+
+
+# ── Module 6: Pedidos ────────────────────────────────────────────────────────
+
+def _recipe_sale_price(recipe: models.Recipe, db: Session) -> float:
+    """Compute suggested sale price per unit using current costs + markup."""
+    total_ing = 0.0
+    for sec in recipe.sections:
+        for item in sec.items:
+            price = 0.0
+            if item.manufacturer_id:
+                c = (db.query(models.SupplierCatalog)
+                     .filter_by(manufacturer_id=item.manufacturer_id)
+                     .order_by(models.SupplierCatalog.id.desc()).first())
+                if c:
+                    price = c.last_price
+            if price == 0.0:
+                c = (db.query(models.SupplierCatalog)
+                     .filter_by(ingredient_id=item.ingredient_id)
+                     .order_by(models.SupplierCatalog.id.desc()).first())
+                if c:
+                    price = c.last_price
+            fcoc = item.cooking_factor if item.cooking_factor > 0 else 1.0
+            total_ing += (price * item.correction_factor / fcoc) * item.quantity
+    total_cost = total_ing + recipe.labor_cost + recipe.energy_cost
+    units = max(1, recipe.rendimento_unidades or 1)
+    return round(total_cost * (recipe.markup or 1.0) / units, 2)
+
+
+@app.get("/pedidos", response_class=HTMLResponse)
+async def pedidos_page(request: Request, db: Session = Depends(get_db)):
+    customers = db.query(models.Customer).order_by(models.Customer.name).all()
+    recipes = db.query(models.Recipe).order_by(models.Recipe.name).all()
+    recipes_data = []
+    for r in recipes:
+        recipes_data.append({
+            "id": r.id,
+            "name": r.name,
+            "stock": r.current_stock_units or 0,
+            "price": _recipe_sale_price(r, db),
+        })
+    orders = (
+        db.query(models.SalesOrder)
+        .order_by(models.SalesOrder.order_date.desc())
+        .limit(30)
+        .all()
+    )
+    return templates.TemplateResponse("pedidos.html", {
+        "request": request,
+        "customers": customers,
+        "recipes_data": recipes_data,
+        "orders": orders,
+        "active_page": "pedidos",
+    })
+
+
+@app.post("/orders")
+async def create_order(request: Request, db: Session = Depends(get_db)):
+    body = await request.json()
+    customer_id = int(body.get("customer_id", 0))
+    items = body.get("items", [])
+    notes = body.get("notes", "")
+
+    if not customer_id:
+        raise HTTPException(422, "Cliente obrigatório")
+    if not items:
+        raise HTTPException(422, "Adicione ao menos um produto")
+
+    customer = db.query(models.Customer).filter_by(id=customer_id).first()
+    if not customer:
+        raise HTTPException(404, "Cliente não encontrado")
+
+    total = 0.0
+    order = models.SalesOrder(
+        customer_id=customer_id,
+        status="PENDING",
+        notes=notes,
+    )
+    db.add(order)
+    db.flush()
+
+    for it in items:
+        recipe_id = int(it.get("recipe_id", 0))
+        qty = int(it.get("quantity", 1))
+        unit_price = float(it.get("unit_price", 0))
+        recipe = db.query(models.Recipe).filter_by(id=recipe_id).first()
+        if not recipe or qty <= 0:
+            continue
+        db.add(models.SalesOrderItem(
+            order_id=order.id,
+            recipe_id=recipe_id,
+            quantity=qty,
+            unit_price=unit_price,
+        ))
+        total += qty * unit_price
+
+    order.total_amount = round(total, 2)
+    db.commit()
+    db.refresh(order)
+    return JSONResponse({"id": order.id, "total": order.total_amount, "status": order.status})
+
+
+@app.put("/orders/{order_id}/status")
+async def update_order_status(
+    order_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    body = await request.json()
+    new_status = body.get("status", "")
+    if new_status not in ("PENDING", "DELIVERED", "CANCELED"):
+        raise HTTPException(422, "Status inválido")
+
+    order = db.query(models.SalesOrder).filter_by(id=order_id).first()
+    if not order:
+        raise HTTPException(404)
+
+    old_status = order.status
+    order.status = new_status
+
+    # When delivering: deduct stock and log movements
+    if new_status == "DELIVERED" and old_status != "DELIVERED":
+        for oi in order.items:
+            recipe = db.query(models.Recipe).filter_by(id=oi.recipe_id).first()
+            if recipe:
+                recipe.current_stock_units = max(0, (recipe.current_stock_units or 0) - oi.quantity)
+                db.add(models.StockMovement(
+                    type="OUT", item_type="PRODUCT", item_id=oi.recipe_id,
+                    quantity=oi.quantity,
+                    description=f"Venda Pedido #{order.id}",
+                ))
+
+    db.commit()
+    return JSONResponse({"id": order.id, "status": order.status})
+
+
+@app.delete("/orders/{order_id}")
+async def delete_order(order_id: int, db: Session = Depends(get_db)):
+    order = db.query(models.SalesOrder).filter_by(id=order_id).first()
+    if order:
+        db.delete(order)
+        db.commit()
+    return JSONResponse({"ok": True})
 
 
 if __name__ == "__main__":

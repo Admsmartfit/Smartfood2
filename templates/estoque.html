@@ -1,0 +1,269 @@
+{% extends "base.html" %}
+{% block title %}Estoque — SmartFood{% endblock %}
+
+{% block content %}
+<div x-data="estoqueApp()" x-cloak>
+
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-white">📊 Controle de Estoque</h1>
+      <p class="text-sm text-gray-400 mt-0.5">Acompanhe insumos e produtos prontos para venda</p>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="flex gap-1 mb-6" style="border-bottom:1px solid var(--border)">
+    <button @click="tab='insumos'"
+            :class="tab==='insumos' ? 'border-b-2 border-blue-400 text-blue-300' : 'text-gray-400'"
+            class="px-4 py-2 text-sm font-medium transition-colors">
+      🥩 Insumos
+    </button>
+    <button @click="tab='produtos'"
+            :class="tab==='produtos' ? 'border-b-2 border-blue-400 text-blue-300' : 'text-gray-400'"
+            class="px-4 py-2 text-sm font-medium transition-colors">
+      🧊 Produtos Congelados
+    </button>
+    <button @click="tab='historico'"
+            :class="tab==='historico' ? 'border-b-2 border-blue-400 text-blue-300' : 'text-gray-400'"
+            class="px-4 py-2 text-sm font-medium transition-colors">
+      📋 Histórico
+    </button>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════
+       TAB: INSUMOS
+  ═══════════════════════════════════════════════════ -->
+  <div x-show="tab==='insumos'">
+    <div class="card overflow-hidden">
+      <div class="px-4 py-3 border-b flex items-center gap-3" style="border-color:var(--border)">
+        <span class="text-sm font-semibold text-white flex-1">Ingredientes / Insumos</span>
+        <input x-model="searchIng" placeholder="Filtrar..." class="text-sm w-40" style="min-height:32px;padding:.25rem .5rem" />
+      </div>
+      <div class="divide-y" style="divide-color:var(--border)">
+        {% for ing in ingredients %}
+        <div class="flex flex-wrap items-center gap-3 px-4 py-3"
+             x-data="{
+               adjQty: '',
+               desc: '',
+               open: false,
+               stock: {{ ing.current_stock or 0 }},
+               name: '{{ ing.name | replace("'", "&#39;") }}'
+             }"
+             x-show="!searchIng || name.toLowerCase().includes(searchIng.toLowerCase())">
+
+          <!-- Name + Category -->
+          <div class="flex-1 min-w-[160px]">
+            <p class="text-sm font-medium text-white">{{ ing.name }}</p>
+            <p class="text-xs text-gray-500">{{ ing.category or 'Outros' }} · {{ ing.unit }}</p>
+          </div>
+
+          <!-- Stock level -->
+          <div class="text-center min-w-[90px]">
+            <p id="ing-stock-{{ ing.id }}" class="text-lg font-bold"
+               :class="stock <= 0 ? 'text-red-400' : stock < 2 ? 'text-yellow-400' : 'text-green-400'"
+               x-text="stock.toFixed(3) + ' {{ ing.unit }}'"></p>
+            <p class="text-xs text-gray-500">em estoque</p>
+          </div>
+
+          <!-- Toggle entry form -->
+          <button @click="open=!open"
+                  class="btn btn-secondary btn-sm"
+                  :class="open ? 'border-blue-500 text-blue-300' : ''">
+            ↑ Registrar
+          </button>
+
+          <!-- Inline entry form -->
+          <div x-show="open" x-cloak
+               class="w-full flex flex-wrap items-end gap-2 pt-2 border-t"
+               style="border-color:var(--border)">
+            <div class="flex-1 min-w-[120px]">
+              <label class="text-xs text-gray-400 block mb-1">Quantidade (use − para saída)</label>
+              <input x-model="adjQty" type="number" step="0.001" placeholder="ex: 5.000 ou -1.5"
+                     class="text-sm" style="min-height:36px" />
+            </div>
+            <div class="flex-1 min-w-[160px]">
+              <label class="text-xs text-gray-400 block mb-1">Descrição</label>
+              <input x-model="desc" type="text" placeholder="ex: Compra NF 123"
+                     class="text-sm" style="min-height:36px" />
+            </div>
+            <button @click="adjustStock('INGREDIENT', {{ ing.id }}, adjQty, desc, $el)"
+                    :disabled="!adjQty"
+                    class="btn btn-primary btn-sm">Salvar</button>
+            <button @click="open=false;adjQty='';desc=''" class="btn btn-secondary btn-sm">✕</button>
+          </div>
+        </div>
+        {% else %}
+        <p class="text-sm text-gray-500 p-4 text-center">Nenhum ingrediente cadastrado.
+          <a href="/" class="text-blue-400 underline">Cadastre em Cadastros</a>.</p>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════
+       TAB: PRODUTOS CONGELADOS
+  ═══════════════════════════════════════════════════ -->
+  <div x-show="tab==='produtos'">
+    <div class="card overflow-hidden">
+      <div class="px-4 py-3 border-b flex items-center gap-3" style="border-color:var(--border)">
+        <span class="text-sm font-semibold text-white flex-1">Produtos Prontos / Congelados</span>
+        <input x-model="searchProd" placeholder="Filtrar..." class="text-sm w-40" style="min-height:32px;padding:.25rem .5rem" />
+      </div>
+      <div class="divide-y" style="divide-color:var(--border)">
+        {% for r in recipes %}
+        <div class="flex flex-wrap items-center gap-3 px-4 py-3"
+             x-data="{
+               adjQty: '',
+               desc: '',
+               open: false,
+               stock: {{ r.current_stock_units or 0 }},
+               name: '{{ r.name | replace("'", "&#39;") }}'
+             }"
+             x-show="!searchProd || name.toLowerCase().includes(searchProd.toLowerCase())">
+
+          <!-- Name -->
+          <div class="flex-1 min-w-[160px]">
+            <p class="text-sm font-medium text-white">{{ r.name }}</p>
+            <p class="text-xs text-gray-500">Rendimento: {{ r.rendimento_unidades or 1 }} unid./lote</p>
+          </div>
+
+          <!-- Stock units -->
+          <div class="text-center min-w-[90px]">
+            <p class="text-lg font-bold"
+               :class="stock <= 0 ? 'text-red-400' : stock < 5 ? 'text-yellow-400' : 'text-green-400'"
+               x-text="stock + ' unid.'"></p>
+            <p class="text-xs text-gray-500">prontos</p>
+          </div>
+
+          <button @click="open=!open"
+                  class="btn btn-secondary btn-sm"
+                  :class="open ? 'border-blue-500 text-blue-300' : ''">
+            ↑↓ Ajustar
+          </button>
+
+          <div x-show="open" x-cloak
+               class="w-full flex flex-wrap items-end gap-2 pt-2 border-t"
+               style="border-color:var(--border)">
+            <div class="flex-1 min-w-[120px]">
+              <label class="text-xs text-gray-400 block mb-1">Unidades (− para baixa)</label>
+              <input x-model="adjQty" type="number" step="1" placeholder="ex: 10 ou -3"
+                     class="text-sm" style="min-height:36px" />
+            </div>
+            <div class="flex-1 min-w-[160px]">
+              <label class="text-xs text-gray-400 block mb-1">Descrição</label>
+              <input x-model="desc" type="text" placeholder="ex: Descarte vencimento"
+                     class="text-sm" style="min-height:36px" />
+            </div>
+            <button @click="adjustStock('PRODUCT', {{ r.id }}, adjQty, desc, $el)"
+                    :disabled="!adjQty"
+                    class="btn btn-primary btn-sm">Salvar</button>
+            <button @click="open=false;adjQty='';desc=''" class="btn btn-secondary btn-sm">✕</button>
+          </div>
+        </div>
+        {% else %}
+        <p class="text-sm text-gray-500 p-4 text-center">Nenhuma receita cadastrada.
+          <a href="/ficha-tecnica" class="text-blue-400 underline">Crie na Ficha Técnica</a>.</p>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════
+       TAB: HISTÓRICO
+  ═══════════════════════════════════════════════════ -->
+  <div x-show="tab==='historico'">
+    <div class="card overflow-hidden">
+      <div class="px-4 py-3 border-b" style="border-color:var(--border)">
+        <span class="text-sm font-semibold text-white">Últimas 50 movimentações</span>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-xs text-gray-400 uppercase tracking-wide border-b" style="border-color:var(--border)">
+              <th class="py-2 px-4 text-left">Data</th>
+              <th class="py-2 px-4 text-left">Tipo</th>
+              <th class="py-2 px-4 text-left">Item</th>
+              <th class="py-2 px-4 text-right">Qtd</th>
+              <th class="py-2 px-4 text-left">Descrição</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y" style="divide-color:var(--border)">
+            {% for m in movements %}
+            <tr class="hover:bg-gray-800/30">
+              <td class="py-2 px-4 text-gray-400">{{ m.date.strftime('%d/%m/%Y %H:%M') }}</td>
+              <td class="py-2 px-4">
+                {% if m.type == 'IN' %}
+                  <span class="px-2 py-0.5 rounded-full text-xs font-medium"
+                        style="background:rgba(34,197,94,.15);color:#86efac">↑ Entrada</span>
+                {% else %}
+                  <span class="px-2 py-0.5 rounded-full text-xs font-medium"
+                        style="background:rgba(239,68,68,.15);color:#fca5a5">↓ Saída</span>
+                {% endif %}
+              </td>
+              <td class="py-2 px-4 text-gray-300">
+                <span class="text-xs text-gray-500">{{ m.item_type }}</span> #{{ m.item_id }}
+              </td>
+              <td class="py-2 px-4 text-right font-mono text-white">{{ m.quantity }}</td>
+              <td class="py-2 px-4 text-gray-400 text-xs">{{ m.description or '—' }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="py-6 text-center text-gray-500">Sem movimentações registradas.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function estoqueApp() {
+  return {
+    tab: 'insumos',
+    searchIng: '',
+    searchProd: '',
+
+    async adjustStock(itemType, itemId, qty, desc, btn) {
+      if (!qty) return;
+      btn.disabled = true;
+      const fd = new FormData();
+      fd.append('item_type', itemType);
+      fd.append('item_id', itemId);
+      fd.append('quantity', qty);
+      fd.append('description', desc || '');
+      try {
+        const res = await fetch('/api/stock/adjust', { method: 'POST', body: fd });
+        if (res.ok) {
+          toast('Estoque atualizado com sucesso!', 'success');
+          // Update the local Alpine stock value on the parent row
+          const row = btn.closest('[x-data]');
+          if (row && row._x_dataStack) {
+            const data = row._x_dataStack[0];
+            if (data) {
+              const n = parseFloat(qty);
+              if (itemType === 'INGREDIENT') {
+                data.stock = Math.max(0, parseFloat((data.stock + n).toFixed(3)));
+              } else {
+                data.stock = Math.max(0, data.stock + Math.trunc(n));
+              }
+              data.adjQty = '';
+              data.desc = '';
+              data.open = false;
+            }
+          }
+        } else {
+          toast('Erro ao ajustar estoque', 'error');
+        }
+      } catch(e) {
+        toast('Erro de rede', 'error');
+      }
+      btn.disabled = false;
+    },
+  };
+}
+</script>
+{% endblock %}

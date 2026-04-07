@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}Clientes — SmartFood{% endblock %}
+
+{% block content %}
+<div x-data="clientesApp()" x-cloak>
+
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-white">👥 Clientes</h1>
+      <p class="text-sm text-gray-400 mt-0.5">CRM simples — cadastre clientes e acompanhe pedidos</p>
+    </div>
+    <button @click="showForm=!showForm" class="btn btn-primary btn-sm">
+      <span x-text="showForm ? '✕ Fechar' : '+ Novo Cliente'"></span>
+    </button>
+  </div>
+
+  <!-- Add customer form -->
+  <div x-show="showForm" x-cloak class="card p-5 mb-6">
+    <h2 class="text-sm font-semibold text-white mb-4">Novo Cliente</h2>
+    <form hx-post="/clientes"
+          hx-target="#customer-list"
+          hx-swap="afterbegin"
+          @htmx:after-request="if($event.detail.successful){showForm=false;$el.reset()}"
+          class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Nome *</label>
+        <input name="name" required placeholder="Ex: Padaria do João" class="text-sm" />
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Telefone</label>
+        <input name="phone" placeholder="(11) 99999-9999" class="text-sm" />
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">E-mail</label>
+        <input name="email" type="email" placeholder="contato@exemplo.com" class="text-sm" />
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Endereço / Bairro</label>
+        <input name="address" placeholder="Rua X, Centro" class="text-sm" />
+      </div>
+      <div class="sm:col-span-2 flex justify-end gap-2">
+        <button type="button" @click="showForm=false" class="btn btn-secondary btn-sm">Cancelar</button>
+        <button type="submit" class="btn btn-primary btn-sm">Salvar Cliente</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Search -->
+  <div class="mb-4">
+    <input x-model="search" placeholder="🔍 Buscar cliente..." class="text-sm" style="max-width:320px" />
+  </div>
+
+  <!-- Customer list -->
+  <div id="customer-list" class="space-y-3">
+    {% for c in customers %}
+    {{ _customer_row_template(c) }}
+    {% else %}
+    <div class="card p-8 text-center" id="empty-state">
+      <p class="text-gray-400 text-sm">Nenhum cliente cadastrado ainda.</p>
+      <p class="text-gray-500 text-xs mt-1">Clique em "+ Novo Cliente" para começar.</p>
+    </div>
+    {% endfor %}
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function clientesApp() {
+  return {
+    showForm: false,
+    search: '',
+
+    async saveCust(id, name, phone, email, address, btn) {
+      const fd = new FormData();
+      fd.append('name', name);
+      fd.append('phone', phone || '');
+      fd.append('email', email || '');
+      fd.append('address', address || '');
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/clientes/${id}`, { method: 'PUT', body: fd });
+        if (res.ok) {
+          const html = await res.text();
+          const el = document.getElementById(`cust-${id}`);
+          if (el) el.outerHTML = html;
+          toast('Cliente atualizado', 'success');
+        } else {
+          toast('Erro ao salvar', 'error');
+        }
+      } catch(e) {
+        toast('Erro de rede', 'error');
+      }
+      btn.disabled = false;
+    },
+  };
+}
+</script>
+{% endblock %}
