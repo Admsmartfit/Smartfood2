@@ -54,9 +54,94 @@
   <!-- Customer list -->
   <div id="customer-list" class="space-y-3">
     {% for c in customers %}
-    {{ _customer_row_template(c) }}
+    <div id="cust-{{ c.id }}" class="card p-0 overflow-hidden"
+         x-show="!search || '{{ c.name | lower }}'.includes(search.toLowerCase())"
+         x-data="{
+           open: false,
+           editing: false,
+           n: '{{ c.name | replace("'", "&#39;") }}',
+           ph: '{{ c.phone | replace("'", "&#39;") }}',
+           em: '{{ c.email | replace("'", "&#39;") }}',
+           addr: '{{ c.address | replace("'", "&#39;") }}'
+         }">
+
+      <!-- Accordion header -->
+      <div class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-800/30 transition-colors"
+           @click="open=!open">
+        <span class="text-blue-400 text-lg">👤</span>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium text-white" x-text="n"></p>
+          <p class="text-xs text-gray-400"
+             x-text="(ph ? ph : '') + (em ? ' · ' + em : '')"></p>
+        </div>
+        <span class="text-xs text-gray-500 flex-shrink-0">
+          {{ c.orders | length }} pedido{{ 's' if c.orders | length != 1 else '' }}
+        </span>
+        <span class="text-gray-500 text-sm ml-1" x-text="open ? '▲' : '▼'"></span>
+      </div>
+
+      <!-- Accordion body -->
+      <div x-show="open" x-cloak class="border-t px-4 py-4 space-y-4" style="border-color:var(--border)">
+
+        <!-- Edit form -->
+        <div x-show="editing" x-cloak class="space-y-2 pb-4 border-b" style="border-color:var(--border)">
+          <div class="grid grid-cols-2 gap-2">
+            <input x-model="n" class="field text-sm" placeholder="Nome" />
+            <input x-model="ph" class="field text-sm" placeholder="Telefone" />
+            <input x-model="em" class="field text-sm" placeholder="E-mail" />
+            <input x-model="addr" class="field text-sm" placeholder="Endereço" />
+          </div>
+          <div class="flex gap-2">
+            <button @click="editing=false; saveCust({{ c.id }}, n, ph, em, addr)" class="btn btn-primary btn-sm">💾 Salvar</button>
+            <button @click="editing=false" class="btn btn-secondary btn-sm">Cancelar</button>
+          </div>
+        </div>
+
+        <!-- View actions -->
+        <div x-show="!editing" class="flex items-center gap-2 flex-wrap">
+          <span x-show="addr" x-text="'📍 ' + addr" class="text-xs text-gray-400 flex-1"></span>
+          <a href="/pedidos" class="btn btn-secondary btn-sm">🛒 Novo Pedido</a>
+          <button @click="editing=true" class="btn btn-secondary btn-sm">✏️ Editar</button>
+          <button hx-delete="/clientes/{{ c.id }}"
+                  hx-target="#cust-{{ c.id }}"
+                  hx-swap="outerHTML"
+                  hx-confirm="Excluir {{ c.name }}? Os pedidos também serão removidos."
+                  class="btn btn-danger btn-sm">🗑️</button>
+        </div>
+
+        <!-- Order history -->
+        <div>
+          <p class="text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wide">Histórico de Pedidos</p>
+          {% if c.orders %}
+          <div class="space-y-1">
+            {% for o in c.orders | sort(attribute='order_date', reverse=True) %}
+            <div class="flex flex-wrap items-center gap-2 py-2 border-b border-gray-800 last:border-0 text-xs">
+              <span class="text-gray-400">{{ o.order_date.strftime('%d/%m/%Y') }}</span>
+              <span class="flex-1 text-gray-300 min-w-0 truncate">
+                {% for oi in o.items %}
+                  {{ oi.recipe.name if oi.recipe else '?' }} x{{ oi.quantity }}{% if not loop.last %}, {% endif %}
+                {% endfor %}
+              </span>
+              <span class="font-mono text-blue-300">R$ {{ "%.2f" | format(o.total_amount) }}</span>
+              {% if o.status == 'DELIVERED' %}
+              <span class="px-2 py-0.5 rounded-full" style="color:#86efac;background:rgba(134,239,172,.1)">Entregue</span>
+              {% elif o.status == 'CANCELED' %}
+              <span class="px-2 py-0.5 rounded-full" style="color:#fca5a5;background:rgba(252,165,165,.1)">Cancelado</span>
+              {% else %}
+              <span class="px-2 py-0.5 rounded-full" style="color:#fcd34d;background:rgba(252,211,77,.1)">Pendente</span>
+              {% endif %}
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="text-xs text-gray-500">Nenhum pedido ainda.</p>
+          {% endif %}
+        </div>
+
+      </div>
+    </div>
     {% else %}
-    <div class="card p-8 text-center" id="empty-state">
+    <div class="card p-8 text-center">
       <p class="text-gray-400 text-sm">Nenhum cliente cadastrado ainda.</p>
       <p class="text-gray-500 text-xs mt-1">Clique em "+ Novo Cliente" para começar.</p>
     </div>
@@ -73,19 +158,15 @@ function clientesApp() {
     showForm: false,
     search: '',
 
-    async saveCust(id, name, phone, email, address, btn) {
+    async saveCust(id, name, phone, email, address) {
       const fd = new FormData();
       fd.append('name', name);
       fd.append('phone', phone || '');
       fd.append('email', email || '');
       fd.append('address', address || '');
-      btn.disabled = true;
       try {
         const res = await fetch(`/clientes/${id}`, { method: 'PUT', body: fd });
         if (res.ok) {
-          const html = await res.text();
-          const el = document.getElementById(`cust-${id}`);
-          if (el) el.outerHTML = html;
           toast('Cliente atualizado', 'success');
         } else {
           toast('Erro ao salvar', 'error');
@@ -93,7 +174,6 @@ function clientesApp() {
       } catch(e) {
         toast('Erro de rede', 'error');
       }
-      btn.disabled = false;
     },
   };
 }

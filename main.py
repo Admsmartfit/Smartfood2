@@ -1540,7 +1540,7 @@ def _customer_row(c: models.Customer, orders: list) -> str:
         f'      <input x-model="addr" class="field text-sm" placeholder="Endereço" />'
         f'    </div>'
         f'    <div class="flex gap-2">'
-        f'      <button @click="saveCust({c.id},n,ph,em,addr,$el)" class="btn btn-primary btn-sm">💾 Salvar</button>'
+        f'      <button @click="editing=false;saveCust({c.id},n,ph,em,addr)" class="btn btn-primary btn-sm">💾 Salvar</button>'
         f'      <button @click="editing=false" class="btn btn-secondary btn-sm">Cancelar</button>'
         f'    </div>'
         f'  </div>'
@@ -1604,9 +1604,7 @@ async def update_customer(
     c.email = email
     c.address = address
     db.commit()
-    db.refresh(c)
-    orders = db.query(models.SalesOrder).filter_by(customer_id=cust_id).order_by(models.SalesOrder.order_date.desc()).all()
-    return HTMLResponse(content=_customer_row(c, orders))
+    return HTMLResponse("")
 
 
 @app.delete("/clientes/{cust_id}", response_class=HTMLResponse)
