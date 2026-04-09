@@ -5,7 +5,9 @@
 
 {% block extra_head %}
 <style>
-  .section-border { border-left: 3px solid #3b82f6; }
+  .section-border { border-left: 3px solid var(--accent); }
+  /* override ficha-specific card header */
+  .card.border-t-4 { border-top-color: var(--accent) !important; }
 </style>
 {% endblock %}
 
@@ -285,7 +287,7 @@
     </div>
 
     <!-- Sidebar -->
-    <div class="space-y-4 lg:sticky lg:top-20 lg:self-start">
+    <div class="space-y-4 lg:sticky lg:top-6 lg:self-start">
 
       <div class="card p-5">
         <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wide mb-4 border-b border-gray-700 pb-2">

@@ -5,19 +5,12 @@
 
 {% block extra_head %}
 <style>
-  /* Category badges */
-  .cat-badge { font-size: .65rem; padding: .15rem .45rem; border-radius: .3rem; }
-  [data-cat="Carnes"]        { color: #fca5a5; background: #450a0a; }
-  [data-cat="Vegetais"]      { color: #86efac; background: #052e16; }
-  [data-cat="Temperos"]      { color: #fcd34d; background: #451a03; }
-  [data-cat="Laticínios"]    { color: #fde68a; background: #422006; }
-  [data-cat="Carboidratos"]  { color: #fdba74; background: #431407; }
-  [data-cat="Embalagens"]    { color: #a5b4fc; background: #1e1b4b; }
-  [data-cat="Outros"]        { color: #9ca3af; background: #1f2937; }
+  /* Category badges — inherited from base.html [data-cat="..."] */
+  .cat-badge { font-size: .65rem; padding: .2rem .5rem; border-radius: .35rem; font-weight:500; }
 
   /* Staleness */
-  .fresh  { color: #4ade80; }
-  .recent { color: #facc15; }
+  .fresh  { color: #86efac; }
+  .recent { color: #fde047; }
   .stale  { color: #f87171; }
 
   /* Hide scrollbar on tab strip */
@@ -39,29 +32,22 @@
     </div>
   </div>
 
-  <!-- Tab bar -->
-  <div class="flex overflow-x-auto border-b border-gray-700 mb-6 no-scrollbar">
-    <button @click="tab = 'bulk'"
-            class="px-5 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap"
-            :class="tab === 'bulk'
-              ? 'border-blue-500 text-blue-400'
-              : 'border-transparent text-gray-500 hover:text-gray-300'">
-      📥 Atualizar por Fornecedor
-    </button>
-    <button @click="tab = 'quick'"
-            class="px-5 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap"
-            :class="tab === 'quick'
-              ? 'border-blue-500 text-blue-400'
-              : 'border-transparent text-gray-500 hover:text-gray-300'">
-      ⚡ Entrada Rápida
-    </button>
-    <button @click="tab = 'catalogo'"
-            class="px-5 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap"
-            :class="tab === 'catalogo'
-              ? 'border-blue-500 text-blue-400'
-              : 'border-transparent text-gray-500 hover:text-gray-300'">
-      📑 Catálogo
-    </button>
+  <!-- Segmented control tabs -->
+  <div class="mb-6">
+    <div class="seg-ctrl">
+      <button @click="tab = 'bulk'"
+              :class="tab === 'bulk' ? 'seg-btn active' : 'seg-btn'">
+        📥 Por Fornecedor
+      </button>
+      <button @click="tab = 'quick'"
+              :class="tab === 'quick' ? 'seg-btn active' : 'seg-btn'">
+        ⚡ Entrada Rápida
+      </button>
+      <button @click="tab = 'catalogo'"
+              :class="tab === 'catalogo' ? 'seg-btn active' : 'seg-btn'">
+        📑 Catálogo
+      </button>
+    </div>
   </div>
 
   <!-- ══════════════════════════════════════════════════════════
