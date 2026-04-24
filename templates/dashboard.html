@@ -1,152 +1,240 @@
 {% extends "base.html" %}
 {% set active_page = "dashboard" %}
 
-{% block title %}SmartFood Ops 360 — Dashboard{% endblock %}
+{% block title %}Dashboard — SmartFood Ops 360{% endblock %}
 
 {% block extra_head %}
 <style>
-  .alert-card { border-radius: .875rem; padding: 1rem 1.25rem; }
-  .bar-track { background: #1f2937; border-radius: 999px; height: 6px; overflow: hidden; }
-  .bar-fill  { height: 100%; border-radius: 999px; transition: width .4s; }
+  .alert-card { border-radius: .75rem; padding: 1rem 1.25rem; }
+  .kpi-number { font-size: 2rem; font-weight: 700; line-height: 1.1; font-family: 'JetBrains Mono', monospace; }
+  .quick-action {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: .5rem; padding: 1rem; border-radius: .75rem;
+    border: 1px solid var(--border); text-decoration: none;
+    background: var(--card); color: var(--text);
+    transition: border-color .15s, box-shadow .15s;
+    text-align: center;
+  }
+  .quick-action:hover {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(37,99,235,.08);
+  }
+  .quick-action .qa-icon { font-size: 1.5rem; }
+  .quick-action .qa-label { font-size: .8rem; font-weight: 600; color: var(--sub); }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="max-w-4xl">
 
-  <!-- Page header + filter -->
-  <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-6">
+<!-- ── Page header ─────────────────────────────────────────── -->
+<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-8">
+  <div>
+    <h1 class="text-2xl font-bold" style="color:var(--text)">📈 Dashboard Operacional</h1>
+    <p class="text-sm mt-0.5" style="color:var(--muted)">Visão geral da cozinha industrial — hoje</p>
+  </div>
+  <form action="/dashboard" method="get" class="flex items-end gap-2 flex-shrink-0">
     <div>
-      <h1 class="text-2xl font-bold text-white">📊 Dashboard de Margem</h1>
-      <p class="text-gray-400 text-sm mt-0.5">Receitas abaixo do limite configurado.</p>
+      <label class="text-xs block mb-1" style="color:var(--muted)">Limite de margem (%)</label>
+      <input type="number" name="limite" value="{{ limite }}" min="0" max="100" step="1"
+             class="w-24 text-center" />
     </div>
+    <button type="submit" class="btn btn-primary">Aplicar</button>
+  </form>
+</div>
 
-    <form action="/dashboard" method="get" class="flex items-end gap-2 flex-shrink-0">
-      <div class="flex flex-col gap-1">
-        <label class="text-xs text-gray-400">Limite de margem (%)</label>
-        <input type="number" name="limite" value="{{ limite }}"
-               min="0" max="100" step="1" class="w-24 text-center" />
-      </div>
-      <button type="submit" class="btn btn-primary">Aplicar</button>
-    </form>
+<!-- ── KPI Cards ───────────────────────────────────────────── -->
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-8">
+
+  <div class="card p-5 kpi-blue">
+    <p class="text-xs font-semibold uppercase tracking-wider mb-2" style="color:var(--muted)">Total de Receitas</p>
+    <p class="kpi-number" style="color:var(--text)">{{ total }}</p>
+    <a href="/ficha-tecnica" class="text-xs font-semibold mt-3 inline-block" style="color:var(--accent)">
+      Ver fichas técnicas →
+    </a>
   </div>
 
-  <!-- KPI row -->
-  <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-7">
-    <div class="card p-4">
-      <p class="text-xs text-gray-500 uppercase tracking-wide">Receitas totais</p>
-      <p class="text-3xl font-bold text-white mt-1">{{ total }}</p>
-    </div>
-    <div class="alert-card border"
-         style="background:rgba(153,27,27,.2); border-color:rgba(239,68,68,.2)">
-      <p class="text-xs text-red-400 uppercase tracking-wide">Abaixo de {{ limite }}%</p>
-      <p class="text-3xl font-bold text-red-300 mt-1">{{ below_limit | length }}</p>
-    </div>
-    <div class="alert-card border col-span-2 sm:col-span-1"
-         style="background:rgba(6,78,59,.15); border-color:rgba(34,197,94,.15)">
-      <p class="text-xs text-green-500 uppercase tracking-wide">Dentro do limite</p>
-      <p class="text-3xl font-bold text-green-300 mt-1">{{ ok_list | length }}</p>
+  <div class="card p-5 kpi-red">
+    <p class="text-xs font-semibold uppercase tracking-wider mb-2" style="color:var(--muted)">Margens em Risco</p>
+    <p class="kpi-number" style="color:{% if kpi_recipes_at_risk > 0 %}#dc2626{% else %}#16a34a{% endif %}">
+      {{ kpi_recipes_at_risk }}
+    </p>
+    <p class="text-xs mt-1" style="color:var(--muted)">receita{{ 's' if kpi_recipes_at_risk != 1 }} abaixo de {{ limite }}%</p>
+    {% if kpi_recipes_at_risk > 0 %}
+    <a href="#analise" class="text-xs font-semibold mt-2 inline-block" style="color:#dc2626">
+      Revisar preços →
+    </a>
+    {% endif %}
+  </div>
+
+  <div class="card p-5 kpi-amber">
+    <p class="text-xs font-semibold uppercase tracking-wider mb-2" style="color:var(--muted)">Insumos em Falta</p>
+    <p class="kpi-number" style="color:{% if kpi_critical_ingredients > 0 %}#d97706{% else %}#16a34a{% endif %}">
+      {{ kpi_critical_ingredients }}
+    </p>
+    <p class="text-xs mt-1" style="color:var(--muted)">item{{ 'ns' if kpi_critical_ingredients != 1 }} com estoque zerado</p>
+    <a href="/estoque" class="text-xs font-semibold mt-2 inline-block" style="color:#d97706">
+      Ver estoque →
+    </a>
+  </div>
+
+</div>
+
+<!-- ── Quick actions + Recent batches ─────────────────────── -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+
+  <!-- Quick actions -->
+  <div class="card p-5">
+    <h3 class="text-sm font-semibold mb-4" style="color:var(--text)">Ações Rápidas</h3>
+    <div class="grid grid-cols-2 gap-3">
+      <a href="/ficha-tecnica" class="quick-action">
+        <span class="qa-icon">➕</span>
+        <span class="qa-label">Nova Ficha</span>
+      </a>
+      <a href="/precos" class="quick-action">
+        <span class="qa-icon">💰</span>
+        <span class="qa-label">Lançar Cotação</span>
+      </a>
+      <a href="/labels" class="quick-action">
+        <span class="qa-icon">🏷️</span>
+        <span class="qa-label">Registrar Lote</span>
+      </a>
+      <a href="/pedidos" class="quick-action">
+        <span class="qa-icon">🧾</span>
+        <span class="qa-label">Novo Pedido</span>
+      </a>
+      <a href="/compras" class="quick-action">
+        <span class="qa-icon">📝</span>
+        <span class="qa-label">Lista de Compras</span>
+      </a>
+      <a href="/estoque" class="quick-action">
+        <span class="qa-icon">📊</span>
+        <span class="qa-label">Ver Estoque</span>
+      </a>
     </div>
   </div>
 
-  <!-- Alert section -->
+  <!-- Recent batches -->
+  <div class="card p-5">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-sm font-semibold" style="color:var(--text)">Últimos Lotes Produzidos</h3>
+      <a href="/labels" class="text-xs font-medium" style="color:var(--accent)">Ver todos →</a>
+    </div>
+    {% if recent_batches %}
+    <ul class="space-y-3">
+      {% for b in recent_batches %}
+      <li class="flex items-center gap-3 pb-3 border-b last:border-0 last:pb-0" style="border-color:var(--border)">
+        <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-sm"
+             style="background:#eff6ff">🏷️</div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-semibold truncate" style="color:var(--text)">{{ b.product_name }}</p>
+          <p class="text-xs" style="color:var(--muted)">Lote {{ b.batch_number }}</p>
+        </div>
+        <span class="text-xs px-2 py-1 rounded-md flex-shrink-0 font-mono"
+              style="background:#f1f5f9;color:var(--sub)">
+          {{ b.production_date.strftime('%d/%m/%Y') }}
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="flex flex-col items-center justify-center py-8 text-center">
+      <span class="text-3xl mb-2">🏷️</span>
+      <p class="text-sm" style="color:var(--muted)">Nenhum lote registrado ainda.</p>
+      <a href="/labels" class="text-xs font-semibold mt-2" style="color:var(--accent)">Registrar primeiro lote →</a>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+
+<!-- ── Margin analysis ─────────────────────────────────────── -->
+<div id="analise">
+
   {% if below_limit %}
-  <div class="mb-8">
-    <h3 class="text-xs font-semibold text-red-400 uppercase tracking-wide mb-3 flex items-center gap-2">
-      <span class="inline-block w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
-      Receitas com margem abaixo de {{ limite }}%
+  <div class="mb-6">
+    <h3 class="text-sm font-semibold mb-4 flex items-center gap-2" style="color:#dc2626">
+      <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse inline-block"></span>
+      {{ below_limit | length }} receita{{ 's' if below_limit | length != 1 }} com margem abaixo de {{ limite }}%
     </h3>
 
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
       {% for m in below_limit %}
       {% set danger = m.margin_pct < (m.margem_minima_pct * 0.5) %}
-
-      <div class="alert-card border
-        {% if danger %}border-red-800/40{% else %}border-yellow-700/30{% endif %}"
-           style="background:{% if danger %}rgba(153,27,27,.2){% else %}rgba(113,63,18,.15){% endif %}">
-
+      <div class="card p-4" style="border-left:3px solid {% if danger %}#dc2626{% else %}#d97706{% endif %}">
         <div class="flex items-start justify-between gap-2 mb-3">
           <div>
-            <p class="font-semibold text-white leading-tight">{{ m.name }}</p>
-            <p class="text-xs text-gray-500 mt-0.5">ID {{ m.id }}</p>
+            <p class="font-semibold text-sm" style="color:var(--text)">{{ m.name }}</p>
+            <p class="text-xs mt-0.5" style="color:var(--muted)">ID {{ m.id }}</p>
           </div>
-          <span class="flex-shrink-0 px-2 py-0.5 rounded-full text-xs font-bold
-            {% if danger %}bg-red-500/20 text-red-300{% else %}bg-yellow-500/20 text-yellow-300{% endif %}">
+          <span class="flex-shrink-0 px-2 py-0.5 rounded-full text-xs font-bold"
+                style="background:{% if danger %}#fee2e2{% else %}#fef3c7{% endif %};
+                       color:{% if danger %}#dc2626{% else %}#d97706{% endif %}">
             {{ m.margin_pct }}%
           </span>
         </div>
 
         <div class="bar-track mb-3">
-          <div class="bar-fill {% if danger %}bg-red-500{% else %}bg-yellow-400{% endif %}"
-               style="width: {{ [m.margin_pct, 0] | max | round | int }}%"></div>
+          <div class="bar-fill" style="width:{{ [m.margin_pct, 0] | max | round | int }}%;
+               background:{% if danger %}#ef4444{% else %}#f59e0b{% endif %}"></div>
         </div>
 
         <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
           <div>
-            <span class="text-gray-500 text-xs">Custo total</span>
-            <p class="font-medium text-gray-200">R$ {{ "%.2f"|format(m.total_cost) }}</p>
+            <span class="text-xs block" style="color:var(--muted)">Custo total</span>
+            <p class="font-medium font-mono" style="color:var(--text)">R$ {{ "%.2f"|format(m.total_cost) }}</p>
           </div>
           <div>
-            <span class="text-gray-500 text-xs">Preço sugerido</span>
-            <p class="font-medium text-gray-200">R$ {{ "%.2f"|format(m.suggested_price) }}</p>
+            <span class="text-xs block" style="color:var(--muted)">Preço sugerido</span>
+            <p class="font-medium font-mono" style="color:var(--text)">R$ {{ "%.2f"|format(m.suggested_price) }}</p>
           </div>
           <div>
-            <span class="text-gray-500 text-xs">Markup</span>
-            <p class="font-medium text-gray-200">{{ m.markup }}×</p>
+            <span class="text-xs block" style="color:var(--muted)">Markup</span>
+            <p class="font-medium font-mono" style="color:var(--text)">{{ m.markup }}×</p>
           </div>
           <div>
-            <span class="text-gray-500 text-xs">Mínimo configurado</span>
-            <p class="font-medium text-gray-200">{{ m.margem_minima_pct }}%</p>
+            <span class="text-xs block" style="color:var(--muted)">Mínimo config.</span>
+            <p class="font-medium font-mono" style="color:var(--text)">{{ m.margem_minima_pct }}%</p>
           </div>
         </div>
 
-        <p class="text-xs mt-3 {% if danger %}text-red-400{% else %}text-yellow-400{% endif %}">
-          {% if danger %}
-            Margem crítica — revise custo ou markup na Ficha Técnica.
-          {% else %}
-            Margem baixa — considere ajustar insumos ou markup.
-          {% endif %}
+        <p class="text-xs mt-3 font-medium" style="color:{% if danger %}#dc2626{% else %}#d97706{% endif %}">
+          {% if danger %}Margem crítica — revise custo ou markup.{% else %}Margem baixa — considere ajustar.{% endif %}
         </p>
       </div>
       {% endfor %}
     </div>
   </div>
   {% else %}
-  <div class="flex flex-col items-center justify-center py-16 text-center">
-    <div class="text-5xl mb-4">✅</div>
-    <p class="text-xl font-semibold text-green-400">Tudo dentro do limite!</p>
-    <p class="text-gray-500 text-sm mt-2">
-      Nenhuma receita com margem abaixo de <strong class="text-gray-400">{{ limite }}%</strong>.
-    </p>
+  <div class="card p-8 flex flex-col items-center justify-center text-center">
+    <span class="text-4xl mb-3">✅</span>
+    <p class="font-semibold" style="color:#16a34a">Todas as margens estão dentro do limite!</p>
+    <p class="text-sm mt-1" style="color:var(--muted)">Nenhuma receita abaixo de {{ limite }}%.</p>
   </div>
   {% endif %}
 
-  <!-- OK section (collapsed) -->
+  <!-- OK section -->
   {% if ok_list %}
-  <details class="group">
-    <summary class="cursor-pointer text-xs font-semibold text-gray-400 hover:text-white
-                    uppercase tracking-wide flex items-center gap-2 select-none
-                    list-none py-3 border-t border-gray-800">
-      <span class="inline-block w-2 h-2 rounded-full bg-green-500"></span>
-      Receitas OK ({{ ok_list | length }})
-      <span class="ml-auto text-xs text-gray-600 group-open:hidden">▼ expandir</span>
-      <span class="ml-auto text-xs text-gray-600 hidden group-open:inline">▲ recolher</span>
+  <details class="group mt-4">
+    <summary class="cursor-pointer text-xs font-semibold uppercase tracking-wide select-none list-none
+                    flex items-center gap-2 py-3 px-1 border-t" style="border-color:var(--border);color:var(--muted)">
+      <span class="w-2 h-2 rounded-full bg-green-500 inline-block"></span>
+      Receitas dentro do limite ({{ ok_list | length }})
+      <span class="ml-auto text-xs group-open:hidden" style="color:var(--muted)">▼ expandir</span>
+      <span class="ml-auto text-xs hidden group-open:inline" style="color:var(--muted)">▲ recolher</span>
     </summary>
 
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
       {% for m in ok_list %}
       <div class="card p-4">
         <div class="flex items-center justify-between mb-2">
-          <p class="font-medium text-white text-sm leading-tight">{{ m.name }}</p>
-          <span class="text-green-400 font-bold text-sm">{{ m.margin_pct }}%</span>
+          <p class="font-medium text-sm" style="color:var(--text)">{{ m.name }}</p>
+          <span class="font-bold text-sm font-mono" style="color:#16a34a">{{ m.margin_pct }}%</span>
         </div>
         <div class="bar-track mb-2">
-          <div class="bar-fill bg-green-500"
-               style="width: {{ [m.margin_pct, 100] | min | round | int }}%"></div>
+          <div class="bar-fill" style="width:{{ [m.margin_pct, 100] | min | round | int }}%;background:#16a34a"></div>
         </div>
-        <p class="text-xs text-gray-500">
-          Custo R$ {{ "%.2f"|format(m.total_cost) }} →
-          Preço R$ {{ "%.2f"|format(m.suggested_price) }}
+        <p class="text-xs font-mono" style="color:var(--muted)">
+          R$ {{ "%.2f"|format(m.total_cost) }} → R$ {{ "%.2f"|format(m.suggested_price) }}
         </p>
       </div>
       {% endfor %}
@@ -155,4 +243,5 @@
   {% endif %}
 
 </div>
+
 {% endblock %}

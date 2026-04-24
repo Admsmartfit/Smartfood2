@@ -766,13 +766,60 @@ async def dashboard(request: Request, limite: float = 20.0, db: Session = Depend
     all_metrics = [_recipe_margin(r, db) for r in recipes]
     below = [m for m in all_metrics if m["margin_pct"] < limite]
     ok_list = [m for m in all_metrics if m["margin_pct"] >= limite]
+
+    # KPI: ingredients with zero stock
+    kpi_critical = (db.query(models.Ingredient)
+                    .filter(models.Ingredient.current_stock <= 0).count())
+
+    # Recent batches for the dashboard widget
+    recent_batches = (db.query(models.ProductionBatch)
+                      .order_by(models.ProductionBatch.production_date.desc())
+                      .limit(5).all())
+
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
+        "active_page": "dashboard",
         "limite": limite,
         "below_limit": below,
         "ok_list": ok_list,
         "total": len(all_metrics),
+        "kpi_recipes_at_risk": len(below),
+        "kpi_critical_ingredients": kpi_critical,
+        "recent_batches": recent_batches,
     })
+
+
+@app.get("/api/search")
+async def api_search(q: str = "", db: Session = Depends(get_db)):
+    """Global Ctrl+K search — returns recipes + ingredients matching query."""
+    if not q or len(q) < 2:
+        return []
+    pattern = f"%{q}%"
+    results = []
+
+    recipes = (db.query(models.Recipe)
+               .filter(models.Recipe.name.ilike(pattern))
+               .limit(5).all())
+    for r in recipes:
+        results.append({
+            "type": "Ficha Técnica",
+            "name": r.name,
+            "url": f"/ficha-tecnica",
+            "icon": "📋",
+        })
+
+    ingredients = (db.query(models.Ingredient)
+                   .filter(models.Ingredient.name.ilike(pattern))
+                   .limit(4).all())
+    for i in ingredients:
+        results.append({
+            "type": "Insumo",
+            "name": f"{i.name} ({i.unit})",
+            "url": "/",
+            "icon": "📦",
+        })
+
+    return results
 
 # ── Bulk price update by supplier ────────────────────────────────────────────
 
