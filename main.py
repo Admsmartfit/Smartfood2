@@ -448,7 +448,7 @@ async def add_to_catalog(
     db.refresh(new_entry)
     
     return HTMLResponse(content=(
-        f'<tr id="cat-{new_entry.id}" class="hover:bg-gray-800/40">'
+        f'<tr id="cat-{new_entry.id}" class="hover:bg-gray-800/40" data-sid="{new_entry.supplier_id}">'
         f'<td class="py-2 px-2 text-gray-300">{new_entry.supplier.name}</td>'
         f'<td class="py-2 px-2 text-gray-300">{new_entry.ingredient.name}</td>'
         f'<td class="py-2 px-2 text-gray-400">{new_entry.manufacturer.brand_name if new_entry.manufacturer else "Sem marca"}</td>'

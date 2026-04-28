@@ -221,7 +221,14 @@
           <div x-show="!editing" class="flex items-start justify-between gap-2 min-h-[44px]">
             <div class="flex-1 min-w-0">
               <div class="text-sm text-white flex flex-wrap items-center gap-1.5">
-                <span x-text="n"></span>
+                <span x-text="n" class="cursor-pointer hover:underline hover:text-blue-600"
+                      data-filter-sid="{{ s.id }}"
+                      onclick="filterCatalog(+this.dataset.filterSid)"
+                      title="Filtrar catálogo por este fornecedor"></span>
+                {% set cat_cnt = s.catalog_entries | length %}
+                {% if cat_cnt > 0 %}
+                <span class="badge badge-blue" style="font-size:.62rem">{{ cat_cnt }} no catálogo</span>
+                {% endif %}
                 <span class="text-gray-500 text-xs" x-show="c" x-text="'· '+c"></span>
               </div>
               <div class="flex flex-wrap gap-1 mt-1">
@@ -235,6 +242,8 @@
               </div>
             </div>
             <div class="flex gap-0.5 flex-shrink-0">
+              <button @click="fillCatalogSupplier('{{ s.id }}')"
+                      class="icon-btn text-blue-400 hover:bg-blue-900/20" title="Vincular ao catálogo">➕</button>
               <button @click="editing=true" class="icon-btn hover:text-blue-400" title="Editar">✏️</button>
               <button hx-delete="/suppliers/{{ s.id }}"
                       hx-target="#sup-{{ s.id }}" hx-swap="outerHTML"
@@ -281,15 +290,17 @@
   ═══════════════════════════════════════════════════════════ -->
   <div class="section-card">
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 border-b border-gray-700 pb-3">
-      <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wide">📑 Catálogo de Compras</h2>
-      <a href="/precos"
-         class="btn btn-secondary btn-sm no-underline">
-        💰 Gerenciar Cotações →
-      </a>
+      <div class="flex flex-wrap items-center gap-2">
+        <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wide">📑 Catálogo de Compras</h2>
+        <span id="catalog-filter-badge" class="badge badge-blue text-xs" style="display:none"></span>
+        <button id="catalog-filter-clear" onclick="filterCatalog(0)"
+                class="btn btn-sm btn-secondary text-xs" style="display:none">✕ Limpar filtro</button>
+      </div>
+      <a href="/precos" class="btn btn-secondary btn-sm no-underline">💰 Gerenciar Cotações →</a>
     </div>
 
-    <form hx-post="/catalog" hx-target="#catalog-body" hx-swap="afterbegin"
-          @htmx:after-request="$event.detail.successful && (toast('Preço registrado'), $el.reset())"
+    <form id="catalog-form" hx-post="/catalog" hx-target="#catalog-body" hx-swap="afterbegin"
+          @htmx:after-request="if($event.detail.successful && $event.detail.requestConfig.verb === 'post') { toast('Preço registrado'); $el.reset(); }"
           class="space-y-3 mb-4">
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <select name="supplier_id" required>
@@ -308,7 +319,7 @@
           {% endfor %}
         </select>
 
-        <select id="manufacturer-select" name="manufacturer_id">
+        <select id="manufacturer-select" name="manufacturer_id" required>
           <option value="">Marca (selecione ingred.)</option>
         </select>
 
@@ -330,7 +341,7 @@
         </thead>
         <tbody id="catalog-body" class="divide-y divide-gray-800">
           {% for e in catalog %}
-          <tr id="cat-{{ e.id }}" class="hover:bg-gray-800/40">
+          <tr id="cat-{{ e.id }}" class="hover:bg-gray-800/40" data-sid="{{ e.supplier.id }}">
             <td class="py-2 px-2 text-gray-300">{{ e.supplier.name }}</td>
             <td class="py-2 px-2 text-gray-300">{{ e.ingredient.name }}</td>
             <td class="py-2 px-2 text-gray-400">{{ e.manufacturer.brand_name if e.manufacturer else "Sem marca" }}</td>
@@ -410,7 +421,43 @@ function crudApp() {
       btn.closest('[x-data]').__x.$data.editing = false;
       toast('Fornecedor atualizado');
     },
+
+    fillCatalogSupplier(supplierId) {
+      const catalogSelect = document.querySelector('#catalog-form select[name="supplier_id"]');
+      if (!catalogSelect) return;
+      catalogSelect.value = supplierId;
+      const section = document.getElementById('catalog-body').closest('.section-card');
+      section.scrollIntoView({ behavior: 'smooth' });
+      setTimeout(() => {
+        document.querySelector('#catalog-form select[name="ingredient_id"]').focus();
+        toast('Fornecedor selecionado no catálogo');
+      }, 400);
+    },
   };
+}
+
+// Catalog quick-filter by supplier
+let _catalogFilterId = 0;
+function filterCatalog(supplierId) {
+  _catalogFilterId = (supplierId === 0 || _catalogFilterId === supplierId) ? 0 : supplierId;
+  const sid = _catalogFilterId;
+  document.querySelectorAll('#catalog-body tr').forEach(tr => {
+    tr.style.display = (!sid || Number(tr.dataset.sid) === sid) ? '' : 'none';
+  });
+  const badge   = document.getElementById('catalog-filter-badge');
+  const clearBtn = document.getElementById('catalog-filter-clear');
+  if (sid) {
+    const nameEl = document.querySelector(`[data-filter-sid="${sid}"]`);
+    const name   = nameEl ? nameEl.textContent.trim() : 'Fornecedor';
+    badge.textContent = name;
+    badge.style.display = '';
+    clearBtn.style.display = '';
+    document.getElementById('catalog-body').closest('.section-card').scrollIntoView({ behavior: 'smooth' });
+    toast(`Filtrando: ${name}`, 'info');
+  } else {
+    badge.style.display = 'none';
+    clearBtn.style.display = 'none';
+  }
 }
 
 // TomSelect on ingredient selects (form dropdowns)
