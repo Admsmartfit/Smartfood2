@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+{% set active_page = "producao" %}
+
+{% block title %}SmartFood — Módulo de Produção{% endblock %}
+
+{% block extra_head %}
+<style>
+  /* ── Touch-friendly targets para tablet ─────────────────── */
+  .kds-select { font-size: 1.05rem; min-height: 52px; }
+  .kds-input  {
+    font-size: 1.6rem; font-weight: 700; text-align: center;
+    font-family: 'JetBrains Mono', monospace; color: var(--accent);
+  }
+  .kds-check { width: 26px; height: 26px; flex-shrink: 0; accent-color: #16a34a; }
+  .kds-qty   {
+    font-size: 1.5rem; font-weight: 800;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text);
+  }
+  .kds-unit  { font-size: .95rem; color: var(--muted); margin-left: .3rem; }
+  .kds-btn   {
+    width: 100%; padding: 1.1rem; border-radius: .75rem;
+    background: #16a34a; color: #fff !important;
+    font-size: 1.15rem; font-weight: 700;
+    border: none; cursor: pointer;
+    box-shadow: 0 4px 16px rgba(22,163,74,.3);
+    transition: background .15s, transform .1s;
+  }
+  .kds-btn:hover  { background: #15803d; }
+  .kds-btn:active { transform: scale(.97); }
+
+  .section-header {
+    padding: .5rem 1rem;
+    font-size: .75rem; font-weight: 700;
+    letter-spacing: .1em; text-transform: uppercase;
+    background: var(--text); color: white;
+  }
+
+  /* Ingredient row checked state */
+  .kds-row.done { opacity: .45; }
+  .kds-row.done label { text-decoration: line-through; }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Inject recipe data for Alpine -->
+<script type="application/json" id="kds-data">{{ recipes_json | tojson }}</script>
+
+<div x-data="kdsApp()" class="max-w-3xl mx-auto">
+
+  <!-- Header -->
+  <div class="mb-6">
+    <h1 class="text-3xl font-bold" style="color:var(--text)">🧑‍🍳 Painel de Produção</h1>
+    <p class="mt-1 text-sm" style="color:var(--muted)">
+      Selecione a receita, informe as porções e marque cada ingrediente conforme separa.
+    </p>
+  </div>
+
+  <!-- Recipe selector + portions -->
+  <div class="card p-5 mb-6" style="background:#eff6ff;border-color:#bfdbfe;box-shadow:none">
+    <div class="flex flex-col md:flex-row gap-4 items-end">
+
+      <div class="flex-1 w-full">
+        <label class="text-sm font-semibold block mb-2" style="color:var(--text)">
+          O que vamos produzir hoje?
+        </label>
+        <select x-model="selectedId" @change="loadRecipe()"
+                class="kds-select w-full">
+          <option value="">— Selecione a Receita —</option>
+          <template x-for="r in allRecipes" :key="r.id">
+            <option :value="r.id" x-text="r.name"></option>
+          </template>
+        </select>
+      </div>
+
+      <div class="w-full md:w-44">
+        <label class="text-sm font-semibold block mb-2" style="color:var(--text)">
+          Quantas Porções?
+        </label>
+        <input type="number" x-model.number="targetPortions" min="1" step="1"
+               class="kds-input w-full" />
+      </div>
+
+    </div>
+
+    <!-- Factor badge -->
+    <div x-show="recipe" x-cloak class="mt-3 flex items-center gap-2">
+      <span class="text-xs font-semibold" style="color:#1d4ed8">
+        Rendimento base: <span x-text="recipe?.rendimento_base"></span> un.
+      </span>
+      <span class="px-3 py-1 rounded-full text-sm font-bold"
+            style="background:#dbeafe;color:#1d4ed8">
+        Fator: <span x-text="multiplier().toFixed(2)"></span>×
+      </span>
+    </div>
+  </div>
+
+  <!-- Main content (recipe selected) -->
+  <div x-show="recipe" x-cloak>
+
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="text-2xl font-bold" style="color:var(--text)" x-text="recipe?.name"></h2>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+      <!-- Ingredient sections (2/3 width on large) -->
+      <div class="lg:col-span-2 space-y-4">
+        <template x-for="(sec, si) in recipe?.sections" :key="si">
+          <div class="card overflow-hidden">
+            <div class="section-header" x-text="sec.name"></div>
+            <ul class="divide-y" style="border-color:var(--border)">
+              <template x-for="(item, ii) in sec.items" :key="ii">
+                <li class="kds-row p-4 flex justify-between items-center"
+                    :class="checked[si + '-' + ii] ? 'done' : ''">
+                  <label class="flex items-center gap-3 cursor-pointer flex-1">
+                    <input type="checkbox" class="kds-check rounded"
+                           @change="checked[si + '-' + ii] = $event.target.checked">
+                    <span class="text-lg font-medium" style="color:var(--text)"
+                          x-text="item.name"></span>
+                  </label>
+                  <div class="text-right flex-shrink-0 ml-4">
+                    <span class="kds-qty"
+                          x-text="(item.base_qty * item.fc * multiplier()).toFixed(3)"></span>
+                    <span class="kds-unit" x-text="item.unit"></span>
+                  </div>
+                </li>
+              </template>
+              <li x-show="sec.items.length === 0"
+                  class="p-4 text-sm text-center" style="color:var(--muted)">
+                Nenhum ingrediente nesta seção.
+              </li>
+            </ul>
+            <!-- Modo de preparo -->
+            <div x-show="sec.instrucoes" x-cloak
+                 class="p-4 text-sm"
+                 style="background:#fefce8;border-top:1px solid #fef08a;color:#854d0e">
+              <strong class="block mb-1">👨‍🍳 Modo de Preparo</strong>
+              <span x-text="sec.instrucoes"></span>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Finalise panel (sticky on large screens) -->
+      <div>
+        <div class="card p-5 lg:sticky lg:top-6">
+
+          <h3 class="font-bold text-base mb-1" style="color:var(--text)">Finalizar Lote</h3>
+          <p class="text-xs mb-4" style="color:var(--muted)">
+            Clique abaixo ao terminar para registrar o lote de rastreabilidade no sistema.
+          </p>
+
+          <div class="space-y-1 text-xs mb-5 p-3 rounded-lg" style="background:var(--bg);border:1px solid var(--border)">
+            <p style="color:var(--sub)">
+              📦 Receita: <strong style="color:var(--text)" x-text="recipe?.name"></strong>
+            </p>
+            <p style="color:var(--sub)">
+              🔢 Lote:
+              <strong style="color:var(--text);font-family:'JetBrains Mono',monospace"
+                      x-text="batchNumber"></strong>
+            </p>
+            <p style="color:var(--sub)">
+              📅 Validade: <strong style="color:var(--text)" x-text="expiryDateDisplay()"></strong>
+            </p>
+            <p style="color:var(--sub)">
+              🍽️ Porções: <strong style="color:var(--text)" x-text="targetPortions"></strong>
+            </p>
+          </div>
+
+          <!-- POST to existing /batches endpoint -->
+          <form hx-post="/batches"
+                hx-swap="none"
+                @htmx:after-request="$event.detail.successful && finalizeSuccess()">
+            <input type="hidden" name="recipe_id"       :value="recipe?.id">
+            <input type="hidden" name="product_name"    :value="recipe?.name">
+            <input type="hidden" name="batch_number"    :value="batchNumber">
+            <input type="hidden" name="expiry_date"     :value="expiryDateISO()">
+            <input type="hidden" name="weight_kg"       value="0">
+            <input type="hidden" name="ingredients_summary" value="">
+
+            <button type="submit" class="kds-btn mb-3">
+              ✅ Finalizar Produção
+            </button>
+          </form>
+
+          <button @click="checkAll()"
+                  class="w-full py-3 rounded-lg text-sm font-semibold transition-colors"
+                  style="border:1px solid var(--border);color:var(--sub);background:var(--bg)">
+            ☑ Marcar Todos Separados
+          </button>
+
+          <!-- Progress indicator -->
+          <div x-show="totalItems > 0" class="mt-4">
+            <div class="flex justify-between text-xs mb-1" style="color:var(--muted)">
+              <span>Separados</span>
+              <span x-text="checkedCount + ' / ' + totalItems"></span>
+            </div>
+            <div class="h-2 rounded-full" style="background:var(--border)">
+              <div class="h-2 rounded-full transition-all duration-300"
+                   style="background:#16a34a"
+                   :style="`width: ${totalItems > 0 ? (checkedCount / totalItems * 100) : 0}%`"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Empty state -->
+  <div x-show="!recipe" class="card p-14 text-center">
+    <p class="text-5xl mb-4">🧑‍🍳</p>
+    <p class="text-xl font-semibold mb-2" style="color:var(--text)">
+      Selecione uma receita para começar
+    </p>
+    <p class="text-sm" style="color:var(--muted)">
+      Os ingredientes nas quantidades corretas aparecerão aqui.<br>
+      Toque nos checkboxes conforme for separando.
+    </p>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function kdsApp() {
+  const allRecipes = JSON.parse(document.getElementById('kds-data').textContent);
+
+  return {
+    allRecipes,
+    selectedId:     '',
+    recipe:         null,
+    targetPortions: 1,
+    batchNumber:    '',
+    checked:        {},
+
+    get checkedCount() {
+      return Object.values(this.checked).filter(Boolean).length;
+    },
+    get totalItems() {
+      if (!this.recipe) return 0;
+      return this.recipe.sections.reduce((s, sec) => s + sec.items.length, 0);
+    },
+
+    loadRecipe() {
+      if (!this.selectedId) { this.recipe = null; return; }
+      this.recipe = this.allRecipes.find(r => r.id === parseInt(this.selectedId)) || null;
+      if (this.recipe) {
+        this.targetPortions = this.recipe.rendimento_base;
+        this.checked = {};
+        this.batchNumber = 'L-' + Date.now().toString().slice(-6);
+      }
+    },
+
+    multiplier() {
+      if (!this.recipe || this.recipe.rendimento_base <= 0) return 1;
+      return this.targetPortions / this.recipe.rendimento_base;
+    },
+
+    expiryDateDisplay() {
+      const d = new Date();
+      d.setMonth(d.getMonth() + 3);
+      return d.toLocaleDateString('pt-BR');
+    },
+
+    expiryDateISO() {
+      const d = new Date();
+      d.setMonth(d.getMonth() + 3);
+      return d.toISOString().split('T')[0];
+    },
+
+    checkAll() {
+      if (!this.recipe) return;
+      this.recipe.sections.forEach((sec, si) => {
+        sec.items.forEach((_, ii) => {
+          this.checked[si + '-' + ii] = true;
+        });
+      });
+      // Also tick all checkbox DOM elements
+      document.querySelectorAll('.kds-check').forEach(cb => { cb.checked = true; });
+    },
+
+    finalizeSuccess() {
+      toast('Lote ' + this.batchNumber + ' registrado! Vá para Lotes e Etiquetas para imprimir.', 'success');
+      this.selectedId     = '';
+      this.recipe         = null;
+      this.targetPortions = 1;
+      this.checked        = {};
+      this.batchNumber    = '';
+    },
+  };
+}
+</script>
+{% endblock %}

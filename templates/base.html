@@ -568,11 +568,15 @@
 
       <hr x-show="sidebarOpen" style="border:none;border-top:1px solid var(--border);margin:.5rem .75rem">
       <p class="sidebar-section-label" x-show="sidebarOpen">Fábrica</p>
-      <a href="/compras"       class="nav-item {% if active_page == 'compras' %}active{% endif %}">
+      <a href="/compras"   class="nav-item {% if active_page == 'compras' %}active{% endif %}">
         <span class="nav-icon">📝</span>
         <span class="nav-label" x-show="sidebarOpen">Planejamento</span>
       </a>
-      <a href="/labels"        class="nav-item {% if active_page == 'etiquetas' %}active{% endif %}">
+      <a href="/producao"  class="nav-item {% if active_page == 'producao' %}active{% endif %}">
+        <span class="nav-icon">🧑‍🍳</span>
+        <span class="nav-label" x-show="sidebarOpen">Cozinha</span>
+      </a>
+      <a href="/labels"    class="nav-item {% if active_page == 'etiquetas' %}active{% endif %}">
         <span class="nav-icon">🏷️</span>
         <span class="nav-label" x-show="sidebarOpen">Lotes e Etiquetas</span>
       </a>

@@ -1,4 +1,5 @@
 import json
+import urllib.parse
 from fastapi import FastAPI, Request, Form, Depends, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
@@ -995,41 +996,64 @@ async def compras_page(request: Request, db: Session = Depends(get_db)):
 
 @app.post("/api/shopping-list", response_class=HTMLResponse)
 async def generate_shopping_list(request: Request, db: Session = Depends(get_db)):
-    """
-    Body: [{"recipe_id": 1, "portions": 50, "recipe_name": "..."}, ...]
-    Returns an HTML fragment grouped by ingredient category.
-    """
+    """Gera lista de compras agrupada por FORNECEDOR com custo estimado e link WhatsApp."""
     body = await request.json()
-
-    # Aggregate: ingredient_id → totals
     agg: dict[int, dict] = {}
+
+    # 1. Agrega ingredientes respeitando o rendimento base da receita
     for entry in body:
         recipe_id = int(entry.get("recipe_id", 0))
         portions  = float(entry.get("portions", 1) or 1)
         recipe = db.query(models.Recipe).filter_by(id=recipe_id).first()
         if not recipe:
             continue
+
+        base_portions = recipe.rendimento_unidades if recipe.rendimento_unidades else 1
+        multiplier = portions / base_portions
+
         for section in recipe.sections:
             for item in section.items:
                 ing = item.ingredient
                 if not ing:
                     continue
-                qty_bruto = item.quantity * item.correction_factor * portions
+                qty_bruto = item.quantity * item.correction_factor * multiplier
                 if ing.id not in agg:
                     agg[ing.id] = {
-                        "name":     ing.name,
-                        "unit":     ing.unit,
-                        "category": ing.category or "Outros",
-                        "qty":      0.0,
+                        "name": ing.name, "unit": ing.unit, "qty": 0.0,
+                        "supplier_name": "Sem Fornecedor Vinculado",
+                        "supplier_phone": "", "estimated_price": 0.0,
                     }
                 agg[ing.id]["qty"] += qty_bruto
 
     if not agg:
         return HTMLResponse(
-            '<p class="text-gray-500 text-sm py-6 text-center">Nenhum insumo encontrado nas receitas selecionadas.</p>'
+            '<p class="text-sm py-8 text-center" style="color:var(--muted)">'
+            'Nenhum insumo encontrado nas receitas selecionadas.</p>'
         )
 
-    # Auto-save this shopping list so /precos can cross-reference it
+    # 2. Descobre melhor fornecedor (menor preço cadastrado) para cada ingrediente
+    grouped_by_supplier: dict[str, dict] = {}
+    for ing_id, data in agg.items():
+        cat = (
+            db.query(models.SupplierCatalog)
+            .filter_by(ingredient_id=ing_id)
+            .order_by(models.SupplierCatalog.last_price.asc())
+            .first()
+        )
+        if cat and cat.supplier:
+            data["supplier_name"]  = cat.supplier.name
+            data["supplier_phone"] = cat.supplier.contact_info or ""
+            data["estimated_price"] = (cat.last_price or 0.0) * data["qty"]
+
+        sup_name = data["supplier_name"]
+        if sup_name not in grouped_by_supplier:
+            grouped_by_supplier[sup_name] = {
+                "phone": data["supplier_phone"], "items": [], "total": 0.0,
+            }
+        grouped_by_supplier[sup_name]["items"].append(data)
+        grouped_by_supplier[sup_name]["total"] += data["estimated_price"]
+
+    # 3. Salva no banco para cruzamento com /precos (mantido da versão anterior)
     save_banner = ""
     try:
         s_list = models.ShoppingList(
@@ -1043,62 +1067,120 @@ async def generate_shopping_list(request: Request, db: Session = Depends(get_db)
             ))
         db.commit()
         save_banner = (
-            f'<div class="mb-4 px-3 py-2 rounded-lg text-xs text-green-300 flex items-center gap-2"'
-            f'     style="background:rgba(22,101,52,.25);border:1px solid rgba(34,197,94,.2)">'
-            f'  ✓ Lista salva automaticamente — use em <a href="/precos" class="underline text-green-200">Cotações</a>'
-            f'  para cruzar com fornecedores.'
-            f'</div>'
+            '<div class="mb-4 px-3 py-2 rounded-lg text-xs flex items-center gap-2"'
+            '     style="background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d">'
+            '  ✓ Lista salva — disponível em '
+            '  <a href="/precos" class="underline font-medium">Cotações</a>'
+            '  para cruzamento com fornecedores.'
+            '</div>'
         )
     except Exception as exc:
         db.rollback()
         save_banner = (
-            f'<div class="mb-4 px-3 py-2 rounded-lg text-xs text-yellow-300 flex items-center gap-2"'
-            f'     style="background:rgba(120,53,15,.25);border:1px solid rgba(234,179,8,.2)">'
-            f'  ⚠ Lista gerada mas não salva no banco: {exc}. '
-            f'  Reinicie o servidor para criar as tabelas novas.'
-            f'</div>'
+            f'<div class="mb-4 px-3 py-2 rounded-lg text-xs"'
+            f'     style="background:#fefce8;border:1px solid #fde047;color:#854d0e">'
+            f'  ⚠ Lista gerada mas não salva: {exc}</div>'
         )
 
-    # Group by category in a defined order
-    CAT_ORDER = ["Carnes", "Vegetais", "Temperos", "Laticínios", "Carboidratos", "Embalagens", "Outros"]
-    grouped: dict[str, list] = {c: [] for c in CAT_ORDER}
-    for item in agg.values():
-        cat = item["category"] if item["category"] in grouped else "Outros"
-        grouped[cat].append(item)
+    # 4. Renderiza cards por fornecedor + botão WhatsApp
+    html_parts = [save_banner]
 
-    # Build HTML
-    html_parts: list[str] = []
-    for cat in CAT_ORDER:
-        items = sorted(grouped[cat], key=lambda x: x["name"])
-        if not items:
-            continue
-        rows = "".join(
-            f'<li class="flex items-center gap-3 py-2 border-b border-gray-100 last:border-0">'
-            f'  <input type="checkbox" class="w-4 h-4 accent-blue-600 flex-shrink-0" />'
-            f'  <span class="flex-1 text-gray-900 text-sm">{i["name"]}</span>'
-            f'  <span class="font-bold text-gray-900 text-sm tabular-nums">{i["qty"]:.3f}</span>'
-            f'  <span class="text-gray-500 text-xs w-6">{i["unit"]}</span>'
-            f'</li>'
-            for i in items
+    # Fornecedores reais primeiro, "Sem Fornecedor" por último
+    sorted_suppliers = sorted(
+        grouped_by_supplier.items(),
+        key=lambda kv: (kv[0] == "Sem Fornecedor Vinculado", kv[0])
+    )
+
+    for sup_name, sup_data in sorted_suppliers:
+        is_no_supplier = (sup_name == "Sem Fornecedor Vinculado")
+        border_color   = "#f59e0b" if is_no_supplier else "#2563eb"
+
+        items_html = ""
+        whatsapp_lines = []
+        for i in sorted(sup_data["items"], key=lambda x: x["name"]):
+            price_txt = (
+                f'<span class="font-mono text-xs ml-2" style="color:var(--muted)">'
+                f'R$ {i["estimated_price"]:.2f}</span>'
+                if i["estimated_price"] > 0 else ""
+            )
+            items_html += (
+                f'<li class="flex justify-between items-center py-2.5 border-b last:border-0"'
+                f'    style="border-color:var(--border)">'
+                f'  <label class="flex items-center gap-2 flex-1 cursor-pointer text-sm"'
+                f'          style="color:var(--text)">'
+                f'    <input type="checkbox" class="w-4 h-4 accent-blue-600 flex-shrink-0">'
+                f'    {i["name"]}'
+                f'  </label>'
+                f'  <span class="font-bold font-mono text-sm flex-shrink-0" style="color:var(--text)">'
+                f'    {i["qty"]:.3f} <span class="font-normal text-xs" style="color:var(--muted)">{i["unit"]}</span>'
+                f'    {price_txt}'
+                f'  </span>'
+                f'</li>'
+            )
+            whatsapp_lines.append(f"- {i['qty']:.3f} {i['unit']} de {i['name']}")
+
+        # Monta mensagem e link WhatsApp
+        clean_phone = (
+            sup_data["phone"]
+            .replace(" ", "").replace("-", "")
+            .replace("(", "").replace(")", "")
         )
+        if clean_phone and not is_no_supplier:
+            wa_msg = (
+                f"Olá {sup_name}! Gostaria de fazer o seguinte pedido:\n\n"
+                + "\n".join(whatsapp_lines)
+                + "\n\nAguardo confirmação. Obrigado!"
+            )
+            wa_href = f"https://wa.me/{clean_phone}?text={urllib.parse.quote(wa_msg)}"
+            cta_html = (
+                f'<a href="{wa_href}" target="_blank" rel="noopener"'
+                f'   class="mt-4 flex items-center justify-center gap-2 w-full py-2.5'
+                f'          font-semibold text-sm rounded-lg transition-colors"'
+                f'   style="background:#16a34a;color:#fff">'
+                f'  📱 Enviar Pedido via WhatsApp'
+                f'</a>'
+            )
+        elif is_no_supplier:
+            cta_html = (
+                '<p class="mt-3 text-xs px-3 py-2 rounded-lg"'
+                '   style="background:#fefce8;border:1px solid #fde047;color:#854d0e">'
+                '  ⚠️ Cadastre o fornecedor e telefone em '
+                '  <a href="/" class="underline font-medium">Insumos</a>'
+                '  para enviar via WhatsApp.'
+                '</p>'
+            )
+        else:
+            cta_html = (
+                '<p class="mt-3 text-xs" style="color:var(--muted)">'
+                '  Cadastre o telefone do fornecedor em '
+                '  <a href="/" style="color:var(--accent)" class="underline">Insumos</a>'
+                '  para habilitar o botão WhatsApp.'
+                '</p>'
+            )
+
+        total_txt = (
+            f'<span class="text-sm font-bold font-mono" style="color:var(--accent)">'
+            f'R$ {sup_data["total"]:.2f}</span>'
+            if sup_data["total"] > 0 else ""
+        )
+        icon = "⚠️" if is_no_supplier else "🏢"
+
         html_parts.append(
-            f'<div class="mb-5">'
-            f'  <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">'
-            f'    <span>{_cat_icon(cat)}</span> {cat}'
-            f'    <span class="ml-auto text-gray-400 font-normal normal-case">{len(items)} item{"s" if len(items) != 1 else ""}</span>'
-            f'  </h3>'
-            f'  <ul class="bg-white rounded-xl border border-gray-200 px-4 divide-y divide-gray-100">{rows}</ul>'
+            f'<div class="card p-5 mb-4" style="border-left:4px solid {border_color}">'
+            f'  <div class="flex items-start justify-between gap-2 mb-3">'
+            f'    <div>'
+            f'      <h3 class="font-bold text-base" style="color:var(--text)">{icon} {sup_name}</h3>'
+            f'      <p class="text-xs mt-0.5" style="color:var(--muted)">'
+            f'        {len(sup_data["items"])} item(ns) · Estimado: {total_txt or "sem preço"}'
+            f'      </p>'
+            f'    </div>'
+            f'  </div>'
+            f'  <ul class="divide-y" style="border-color:var(--border)">{items_html}</ul>'
+            f'  {cta_html}'
             f'</div>'
         )
-    return HTMLResponse(save_banner + "".join(html_parts))
 
-
-def _cat_icon(cat: str) -> str:
-    return {
-        "Carnes": "🥩", "Vegetais": "🥦", "Temperos": "🧄",
-        "Laticínios": "🧀", "Carboidratos": "🌾",
-        "Embalagens": "📦", "Outros": "📋",
-    }.get(cat, "📋")
+    return HTMLResponse("".join(html_parts))
 
 
 # ── Module 2: Labels ──────────────────────────────────────────────────────────
@@ -1463,6 +1545,45 @@ async def qr_redirect(batch_id: int, db: Session = Depends(get_db)):
         batch.promo_url,
     )
     return RedirectResponse(url=url, status_code=302)
+
+
+# ── Módulo Produção (KDS — Kitchen Display System) ───────────────────────────
+
+@app.get("/producao", response_class=HTMLResponse)
+async def producao_page(request: Request, db: Session = Depends(get_db)):
+    """Tela de execução da cozinha — escala porções e finaliza lotes."""
+    recipes = db.query(models.Recipe).order_by(models.Recipe.name).all()
+
+    recipes_json = []
+    for r in recipes:
+        sections = []
+        for sec in r.sections:
+            items = []
+            for it in sec.items:
+                items.append({
+                    "name":     it.ingredient.name if it.ingredient else "Insumo Removido",
+                    "unit":     it.ingredient.unit if it.ingredient else "",
+                    "base_qty": it.quantity,
+                    "fc":       it.correction_factor,
+                })
+            sections.append({
+                "name":       sec.name,
+                "instrucoes": sec.instrucoes or "",
+                "items":      items,
+            })
+
+        recipes_json.append({
+            "id":              r.id,
+            "name":            r.name,
+            "rendimento_base": r.rendimento_unidades or 1,
+            "sections":        sections,
+        })
+
+    return templates.TemplateResponse("producao.html", {
+        "request":      request,
+        "active_page":  "producao",
+        "recipes_json": recipes_json,
+    })
 
 
 # ── Module 5: Estoque ────────────────────────────────────────────────────────
