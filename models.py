@@ -53,7 +53,7 @@ class SupplierCatalog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=False)
-    manufacturer_id = Column(Integer, ForeignKey("ingredient_manufacturers.id"), nullable=False)
+    manufacturer_id = Column(Integer, ForeignKey("ingredient_manufacturers.id"), nullable=True)
     ingredient_id = Column(Integer, ForeignKey("ingredients.id"), nullable=False)
     last_price = Column(Float, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

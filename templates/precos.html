@@ -51,42 +51,71 @@
   </div>
 
   <!-- ══════════════════════════════════════════════════════════
-       ABA 1 — Atualizar por Fornecedor
+       ABA 1 — Responder Cotação (2 passos guiados)
   ═══════════════════════════════════════════════════════════ -->
   <div x-show="tab === 'bulk'" x-cloak x-transition.opacity>
     <section class="card p-6">
-      <p class="text-xs text-gray-500 mb-4">
-        Gere a lista em <a href="/compras" class="text-blue-400 underline">Compras</a> primeiro.
-        O sistema cruza a demanda com as categorias cadastradas no fornecedor e pré-preenche os últimos preços.
+      <h2 class="text-base font-bold mb-1" style="color:var(--text)">📲 Responder Cotação</h2>
+      <p class="text-sm mb-6" style="color:var(--muted)">
+        Recebeu a resposta do fornecedor no WhatsApp? Selecione a lista e o fornecedor
+        para preencher os preços rapidamente.
       </p>
 
-      <!-- supplier_id_bulk MUST be inside this form so it's included in the POST -->
       <form hx-post="/precos/bulk-update"
             hx-target="#bulk-update-result"
             hx-swap="innerHTML"
             @htmx:after-request="$event.detail.successful && $event.detail.requestConfig.verb === 'post' && setTimeout(() => location.reload(), 1500)">
 
-        <div class="max-w-md mb-5">
-          <label class="text-xs text-gray-400 block mb-1.5">Fornecedor da tabela recebida</label>
-          <select hx-get="/precos/fornecedor"
-                  hx-include="[name='supplier_id_bulk'],[name='list_id']"
-                  hx-trigger="change"
-                  hx-target="#supplier-price-rows"
-                  name="supplier_id_bulk"
-                  class="text-sm">
-            <option value="">— selecione —</option>
-            {% for s in suppliers %}
-            <option value="{{ s.id }}">
-              {{ s.name }}
-              {%- if s.supplier_categories %} ·
-                {%- for sc in s.supplier_categories %}{{ cat_style[sc.category].emoji }}{% endfor %}
-              {%- endif %}
-            </option>
-            {% endfor %}
-          </select>
+        <!-- 2-step selectors -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 p-4 rounded-xl"
+             style="background:var(--bg);border:1px solid var(--border)">
+
+          <div>
+            <label class="text-xs font-bold uppercase tracking-wider block mb-1.5"
+                   style="color:var(--accent)">
+              1. Qual a Lista de Compras?
+            </label>
+            <select name="list_id" class="text-sm w-full font-semibold">
+              <option value="">— Use a lista mais recente (Padrão) —</option>
+              {% for l in shopping_lists %}
+              <option value="{{ l.id }}">{{ l.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div>
+            <label class="text-xs font-bold uppercase tracking-wider block mb-1.5"
+                   style="color:var(--accent)">
+              2. Quem respondeu?
+            </label>
+            <select hx-get="/precos/fornecedor"
+                    hx-include="[name='list_id'],[name='supplier_id_bulk']"
+                    hx-trigger="change"
+                    hx-target="#supplier-price-rows"
+                    name="supplier_id_bulk"
+                    class="text-sm w-full font-semibold"
+                    style="border-color:var(--accent)">
+              <option value="">— Selecione o Fornecedor —</option>
+              {% for s in suppliers %}
+              <option value="{{ s.id }}">
+                {{ s.name }}
+                {%- if s.supplier_categories %} ·
+                  {%- for sc in s.supplier_categories %}{{ cat_style[sc.category].emoji }}{% endfor %}
+                {%- endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+
         </div>
 
-        <div id="supplier-price-rows"></div>
+        <!-- Price rows injected by HTMX -->
+        <div id="supplier-price-rows">
+          <div class="text-center py-10 rounded-xl border-2 border-dashed text-sm"
+               style="border-color:var(--border);color:var(--muted)">
+            Selecione o fornecedor acima para ver os itens cotados.
+          </div>
+        </div>
         <div id="bulk-update-result"></div>
       </form>
     </section>
@@ -148,7 +177,7 @@
 
         <div class="w-full sm:flex-1">
           <label class="text-xs text-gray-400 block mb-1">Marca</label>
-          <select id="quick-man-select" x-ref="manSelect" name="manufacturer_id" required class="text-sm w-full">
+          <select id="quick-man-select" x-ref="manSelect" name="manufacturer_id" class="text-sm w-full">
             <option value="">Aguardando ingrediente...</option>
           </select>
         </div>
@@ -231,8 +260,8 @@
                   <tr id="cat-row-{{ e.id }}" class="hover:bg-gray-800/30"
                       x-data="{ editing: false, price: '{{ e.last_price or 0 }}' }">
                     <td class="py-2.5 pr-3 text-white font-medium">
-                      {{ e.manufacturer.brand_name }}
-                      <span class="text-gray-600 text-xs block">rend. {{ e.manufacturer.yield_percentage }}%</span>
+                      {{ e.manufacturer.brand_name if e.manufacturer else "Sem marca" }}
+                      <span class="text-gray-600 text-xs block">rend. {{ e.manufacturer.yield_percentage if e.manufacturer else "100.0" }}%</span>
                     </td>
                     <td class="py-2.5 pr-3 text-gray-300">{{ e.supplier.name }}</td>
                     <td class="py-2.5 pr-3 font-mono text-gray-500 text-xs hidden sm:table-cell">{{ fc }}</td>
@@ -269,7 +298,7 @@
                     <td class="py-2.5 pl-2 text-right">
                       <button hx-delete="/catalog/{{ e.id }}"
                               hx-target="#cat-row-{{ e.id }}" hx-swap="outerHTML"
-                              hx-confirm="Remover cotação de {{ e.manufacturer.brand_name }} / {{ e.supplier.name }}?"
+                              hx-confirm="Remover cotação de {{ e.manufacturer.brand_name if e.manufacturer else 'Sem marca' }} / {{ e.supplier.name }}?"
                               @htmx:after-request="$event.detail.successful && toast('Cotação removida', 'info')"
                               class="icon-btn text-gray-500 hover:text-red-400"
                               title="Excluir">🗑️</button>
@@ -309,7 +338,7 @@
                          class="text-sm w-full pl-7 text-right text-blue-300 font-mono" />
                 </div>
                 <button @click="addCatalogEntry({{ ing.id }}, newMan, newSup, newPrice)"
-                        :disabled="!newSup || !newMan || !newPrice"
+                        :disabled="!newSup || !newPrice"
                         class="btn btn-secondary btn-sm w-full sm:w-auto flex-shrink-0">
                   💾 Salvar
                 </button>
@@ -349,7 +378,7 @@ async function savePrice(id, newPrice) {
 }
 
 async function addCatalogEntry(ingId, manId, supId, price) {
-  if (!manId || !supId || !price) return;
+  if (!supId || !price) return;
   const body = new FormData();
   body.append('ingredient_id', ingId);
   body.append('manufacturer_id', manId);

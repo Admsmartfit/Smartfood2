@@ -88,14 +88,21 @@ def get_db():
     finally:
         db.close()
 
-@app.get("/", response_class=HTMLResponse)
-async def index(request: Request, db: Session = Depends(get_db)):
+@app.get("/")
+async def root():
+    """Redireciona para o Dashboard Operacional."""
+    return RedirectResponse(url="/dashboard", status_code=302)
+
+
+@app.get("/cadastros", response_class=HTMLResponse)
+async def cadastros_page(request: Request, db: Session = Depends(get_db)):
     ingredients = db.query(models.Ingredient).order_by(models.Ingredient.name).all()
     suppliers = db.query(models.Supplier).order_by(models.Supplier.name).all()
     manufacturers = db.query(models.IngredientManufacturer).order_by(models.IngredientManufacturer.brand_name).all()
     catalog = db.query(models.SupplierCatalog).all()
     return templates.TemplateResponse("index.html", {
         "request": request,
+        "active_page": "cadastros",
         "ingredients": ingredients,
         "suppliers": suppliers,
         "manufacturers": manufacturers,
@@ -120,6 +127,7 @@ async def ficha_tecnica_page(request: Request, db: Session = Depends(get_db)):
 
     return templates.TemplateResponse("ficha_tecnica.html", {
         "request": request,
+        "active_page": "ficha",
         "ingredients_json": ingredients_data,
         "recipes_list": recipes_list,
     })
@@ -424,14 +432,15 @@ async def delete_supplier(sup_id: int, db: Session = Depends(get_db)):
 async def add_to_catalog(
     supplier_id: int = Form(...),
     ingredient_id: int = Form(...),
-    manufacturer_id: int = Form(...),
+    manufacturer_id: str = Form(None),
     last_price: float = Form(...),
     db: Session = Depends(get_db)
 ):
+    man_id = int(manufacturer_id) if manufacturer_id and manufacturer_id.strip() else None
     new_entry = models.SupplierCatalog(
         supplier_id=supplier_id,
         ingredient_id=ingredient_id,
-        manufacturer_id=manufacturer_id,
+        manufacturer_id=man_id,
         last_price=last_price
     )
     db.add(new_entry)
@@ -439,11 +448,18 @@ async def add_to_catalog(
     db.refresh(new_entry)
     
     return HTMLResponse(content=(
-        f'<tr class="catalog-row">'
-        f'<td data-label="Fornecedor" class="py-3 px-2">{new_entry.supplier.name}</td>'
-        f'<td data-label="Ingrediente" class="py-3 px-2">{new_entry.ingredient.name}</td>'
-        f'<td data-label="Marca" class="py-3 px-2">{new_entry.manufacturer.brand_name}</td>'
-        f'<td data-label="Preço" class="py-3 px-2 text-right font-medium text-blue-300">R$ {new_entry.last_price:.2f}</td>'
+        f'<tr id="cat-{new_entry.id}" class="hover:bg-gray-800/40">'
+        f'<td class="py-2 px-2 text-gray-300">{new_entry.supplier.name}</td>'
+        f'<td class="py-2 px-2 text-gray-300">{new_entry.ingredient.name}</td>'
+        f'<td class="py-2 px-2 text-gray-400">{new_entry.manufacturer.brand_name if new_entry.manufacturer else "Sem marca"}</td>'
+        f'<td class="py-2 px-2 text-right font-medium text-blue-300">R$ {new_entry.last_price:.2f}</td>'
+        f'<td class="py-2 px-2 text-right">'
+        f'<a href="/precos" class="text-xs text-gray-500 hover:text-blue-400">✏️</a>'
+        f'<button hx-delete="/catalog/{new_entry.id}"'
+        f' hx-target="#cat-{new_entry.id}" hx-swap="outerHTML"'
+        f' hx-confirm="Remover esta entrada do catálogo?"'
+        f' class="icon-btn hover:text-red-400 ml-1">🗑️</button>'
+        f'</td>'
         f'</tr>'
     ), status_code=201)
 
@@ -478,8 +494,8 @@ async def search_manufacturers(ingredient_id: int, db: Session = Depends(get_db)
     manufacturers = db.query(models.IngredientManufacturer).filter_by(ingredient_id=ingredient_id).all()
     options = "".join([f'<option value="{m.id}">{m.brand_name} (Rendimento: {m.yield_percentage}%)</option>' for m in manufacturers])
     if not manufacturers:
-        return HTMLResponse(content='<option value="">Nenhuma marca cadastrada</option>')
-    return HTMLResponse(content='<option value="">Selecione uma marca...</option>' + options)
+        return HTMLResponse(content='<option value="">Sem marca (Genérico)</option>')
+    return HTMLResponse(content='<option value="">Sem marca (Genérico)</option>' + options)
 
 
 # --- PREÇOS / COTAÇÕES ---
@@ -506,11 +522,20 @@ async def precos_page(request: Request, db: Session = Depends(get_db)):
             "manufacturers": ing.manufacturers,
         })
 
+    shopping_lists = (
+        db.query(models.ShoppingList)
+        .order_by(models.ShoppingList.id.desc())
+        .limit(10)
+        .all()
+    )
+
     return templates.TemplateResponse("precos.html", {
         "request": request,
+        "active_page": "cotacoes",
         "groups": groups,
         "suppliers": suppliers,
         "ingredients": ingredients,
+        "shopping_lists": shopping_lists,
     })
 
 
@@ -816,7 +841,7 @@ async def api_search(q: str = "", db: Session = Depends(get_db)):
         results.append({
             "type": "Insumo",
             "name": f"{i.name} ({i.unit})",
-            "url": "/",
+            "url": "/cadastros",
             "icon": "📦",
         })
 
@@ -879,7 +904,7 @@ async def get_fornecedor_precos(
             f"<p class='text-sm text-gray-500 py-3'>"
             f"<strong>{supplier.name}</strong> não tem categorias compatíveis com esta lista. "
             f"Configure as categorias do fornecedor em "
-            f"<a href='/' class='text-blue-400 underline'>Cadastros</a>.</p>"
+            f"<a href='/cadastros' class='text-blue-400 underline'>Cadastros</a>.</p>"
         )
         return HTMLResponse(html)
 
@@ -990,8 +1015,37 @@ async def compras_page(request: Request, db: Session = Depends(get_db)):
     recipes  = db.query(models.Recipe).order_by(models.Recipe.name).all()
     return templates.TemplateResponse("compras.html", {
         "request": request,
+        "active_page": "compras",
         "recipes": recipes,
     })
+
+
+@app.post("/api/save-production-plan", response_class=HTMLResponse)
+async def save_production_plan(request: Request, db: Session = Depends(get_db)):
+    """Formaliza o planejamento de produção criando lotes pendentes para a Cozinha."""
+    plan = await request.json()
+    criados = 0
+    for item in plan:
+        recipe = db.query(models.Recipe).filter_by(id=item.get("recipe_id")).first()
+        if recipe:
+            batch = models.ProductionBatch(
+                batch_number=f"PLAN-{datetime.utcnow().strftime('%y%m%d%H%M')}-{recipe.id}",
+                product_name=recipe.name,
+                recipe_id=recipe.id,
+                expiry_date=datetime.utcnow() + timedelta(days=90),
+                weight_kg=0.0,
+            )
+            db.add(batch)
+            criados += 1
+    db.commit()
+    return HTMLResponse(
+        f'<div class="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold"'
+        f'     style="background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d">'
+        f'  <span class="text-lg">✅</span>'
+        f'  {criados} ordem{"ns" if criados != 1 else ""} de produção enviada{"s" if criados != 1 else ""} '
+        f'  para a <a href="/producao" style="text-decoration:underline;font-weight:700">Cozinha</a>!'
+        f'</div>'
+    )
 
 
 @app.post("/api/shopping-list", response_class=HTMLResponse)
@@ -1145,7 +1199,7 @@ async def generate_shopping_list(request: Request, db: Session = Depends(get_db)
                 '<p class="mt-3 text-xs px-3 py-2 rounded-lg"'
                 '   style="background:#fefce8;border:1px solid #fde047;color:#854d0e">'
                 '  ⚠️ Cadastre o fornecedor e telefone em '
-                '  <a href="/" class="underline font-medium">Insumos</a>'
+                '  <a href="/cadastros" class="underline font-medium">Insumos</a>'
                 '  para enviar via WhatsApp.'
                 '</p>'
             )
@@ -1153,7 +1207,7 @@ async def generate_shopping_list(request: Request, db: Session = Depends(get_db)
             cta_html = (
                 '<p class="mt-3 text-xs" style="color:var(--muted)">'
                 '  Cadastre o telefone do fornecedor em '
-                '  <a href="/" style="color:var(--accent)" class="underline">Insumos</a>'
+                '  <a href="/cadastros" style="color:var(--accent)" class="underline">Insumos</a>'
                 '  para habilitar o botão WhatsApp.'
                 '</p>'
             )
@@ -1236,6 +1290,7 @@ async def labels_page(request: Request, db: Session = Depends(get_db)):
     ]
     return templates.TemplateResponse("labels.html", {
         "request": request,
+        "active_page": "etiquetas",
         "label_templates": label_templates,
         "batches": batches,
         "recipes": recipes,
@@ -1579,10 +1634,21 @@ async def producao_page(request: Request, db: Session = Depends(get_db)):
             "sections":        sections,
         })
 
+    # Lotes pendentes criados pelo planejamento de compras (PLAN-...)
+    pending_batches = (
+        db.query(models.ProductionBatch)
+        .filter(models.ProductionBatch.batch_number.like("PLAN-%"))
+        .filter(models.ProductionBatch.recipe_id.isnot(None))
+        .order_by(models.ProductionBatch.production_date.desc())
+        .limit(10)
+        .all()
+    )
+
     return templates.TemplateResponse("producao.html", {
-        "request":      request,
-        "active_page":  "producao",
-        "recipes_json": recipes_json,
+        "request":         request,
+        "active_page":     "producao",
+        "recipes_json":    recipes_json,
+        "pending_batches": pending_batches,
     })
 
 

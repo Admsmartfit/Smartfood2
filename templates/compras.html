@@ -170,8 +170,23 @@
       <div x-show="listGenerated && !loading" x-cloak
            class="mt-4 card p-4 no-print">
         <div class="flex items-center justify-between text-sm">
-          <span class="text-gray-400">Total de itens distintos</span>
-          <span class="font-bold text-white" x-text="totalItems"></span>
+          <span style="color:var(--muted)">Total de itens distintos</span>
+          <span class="font-bold font-mono" style="color:var(--text)" x-text="totalItems"></span>
+        </div>
+      </div>
+
+      <!-- Próximos Passos (visible after list is generated) -->
+      <div x-show="listGenerated && !loading" x-cloak
+           class="mt-4 card p-5 no-print" style="border-top:3px solid var(--accent)">
+        <h3 class="font-bold text-sm mb-1" style="color:var(--text)">📥 Próximos Passos</h3>
+        <p class="text-xs mb-4" style="color:var(--muted)">
+          Lista salva para cotação. Envie as ordens de produção para a equipe da cozinha começar a separar.
+        </p>
+        <div id="save-production-result">
+          <button @click="saveProduction()"
+                  class="btn btn-primary btn-full font-bold">
+            🧑‍🍳 Enviar Ordens para a Cozinha
+          </button>
         </div>
       </div>
 
@@ -248,6 +263,23 @@ function comprasApp() {
         toast(err.message, 'error');
       } finally {
         this.loading = false;
+      }
+    },
+
+    // ── Save production plan → creates pending batches ───────────
+    async saveProduction() {
+      if (!this.plan.length) return;
+      try {
+        const resp = await fetch('/api/save-production-plan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.plan),
+        });
+        const html = await resp.text();
+        document.getElementById('save-production-result').innerHTML = html;
+        toast('Ordens enviadas para a cozinha!', 'success');
+      } catch (err) {
+        toast('Erro ao salvar produção.', 'error');
       }
     },
 

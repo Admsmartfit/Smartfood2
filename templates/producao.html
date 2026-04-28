@@ -49,12 +49,50 @@
 <div x-data="kdsApp()" class="max-w-3xl mx-auto">
 
   <!-- Header -->
-  <div class="mb-6">
-    <h1 class="text-3xl font-bold" style="color:var(--text)">🧑‍🍳 Painel de Produção</h1>
-    <p class="mt-1 text-sm" style="color:var(--muted)">
-      Selecione a receita, informe as porções e marque cada ingrediente conforme separa.
+  <div class="flex items-start justify-between mb-6">
+    <div>
+      <h1 class="text-3xl font-bold" style="color:var(--text)">🧑‍🍳 Painel de Produção</h1>
+      <p class="mt-1 text-sm" style="color:var(--muted)">
+        Selecione a receita, informe as porções e marque cada ingrediente conforme separa.
+      </p>
+    </div>
+  </div>
+
+  <!-- Fila de Ordens Pendentes (geradas em Compras) -->
+  {% if pending_batches %}
+  <div class="card p-4 mb-6" style="border-left:4px solid var(--accent)">
+    <div class="flex items-center gap-2 mb-3">
+      <span class="text-base">📋</span>
+      <h2 class="text-sm font-bold" style="color:var(--text)">
+        Ordens de Produção Pendentes
+      </h2>
+      <span class="badge badge-blue ml-auto">{{ pending_batches | length }} na fila</span>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      {% for b in pending_batches %}
+      <button
+        onclick="
+          const app = document.querySelector('[x-data]').__x.$data;
+          const r = app.allRecipes.find(r => r.id === {{ b.recipe_id }});
+          if (r) {
+            app.selectedId = {{ b.recipe_id }};
+            app.loadRecipe();
+            this.closest('.card').style.display='none';
+          }
+        "
+        class="flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors"
+        style="border-color:var(--accent);color:var(--accent);background:#eff6ff"
+      >
+        <span>▶</span>
+        <span>{{ b.product_name }}</span>
+      </button>
+      {% endfor %}
+    </div>
+    <p class="text-xs mt-3" style="color:var(--muted)">
+      Clique em uma ordem para carregar a receita automaticamente.
     </p>
   </div>
+  {% endif %}
 
   <!-- Recipe selector + portions -->
   <div class="card p-5 mb-6" style="background:#eff6ff;border-color:#bfdbfe;box-shadow:none">

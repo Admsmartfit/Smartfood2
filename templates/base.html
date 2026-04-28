@@ -507,7 +507,7 @@
       <div x-show="searchQuery.length === 0"
            class="px-4 py-4 flex flex-wrap gap-2">
         <a href="/ficha-tecnica" class="badge badge-blue" @click="searchOpen=false">📋 Fichas</a>
-        <a href="/" class="badge badge-slate" @click="searchOpen=false">📦 Insumos</a>
+        <a href="/cadastros" class="badge badge-slate" @click="searchOpen=false">📦 Insumos</a>
         <a href="/precos" class="badge badge-slate" @click="searchOpen=false">💰 Cotações</a>
         <a href="/labels" class="badge badge-slate" @click="searchOpen=false">🏷️ Etiquetas</a>
         <a href="/estoque" class="badge badge-slate" @click="searchOpen=false">📊 Estoque</a>
@@ -529,7 +529,7 @@
          :style="`width: ${sidebarOpen ? 'var(--sidebar-w)' : 'var(--sidebar-w-sm)'}`">
 
     <!-- Logo -->
-    <div class="sidebar-logo">
+    <a href="/dashboard" class="sidebar-logo" style="text-decoration:none">
       <div style="width:32px;height:32px;background:var(--accent);border-radius:.5rem;
                   display:flex;align-items:center;justify-content:center;
                   font-weight:800;font-size:.75rem;color:white;flex-shrink:0">SF</div>
@@ -537,7 +537,7 @@
         <p style="font-size:.9rem;font-weight:700;color:var(--text);line-height:1.2">SmartFood</p>
         <p style="font-size:.6rem;color:var(--muted)">Ops 360</p>
       </div>
-    </div>
+    </a>
 
     <!-- Navigation -->
     <nav style="flex:1;overflow-y:auto;overflow-x:hidden;padding:.5rem 0">
@@ -550,7 +550,7 @@
 
       <hr x-show="sidebarOpen" style="border:none;border-top:1px solid var(--border);margin:.5rem .75rem">
       <p class="sidebar-section-label" x-show="sidebarOpen">Suprimentos</p>
-      <a href="/"              class="nav-item {% if active_page == 'cadastros' %}active{% endif %}">
+      <a href="/cadastros"     class="nav-item {% if active_page == 'cadastros' %}active{% endif %}">
         <span class="nav-icon">📦</span>
         <span class="nav-label" x-show="sidebarOpen">Insumos</span>
       </a>
