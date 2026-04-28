@@ -22,7 +22,7 @@
 
   <div class="flex items-center justify-between mb-6">
     <div>
-      <h1 class="text-2xl font-bold text-white">🛒 Pedidos de Venda</h1>
+      <h1 class="text-2xl font-bold text-slate-800">🛒 Pedidos de Venda</h1>
       <p class="text-sm text-gray-400 mt-0.5">Registre vendas e gerencie entregas</p>
     </div>
     <button @click="showPDV=!showPDV" class="btn btn-primary btn-sm">
@@ -34,7 +34,7 @@
        PDV PANEL
   ═══════════════════════════════════════════════════ -->
   <div x-show="showPDV" x-cloak class="card p-5 mb-8">
-    <h2 class="text-base font-semibold text-white mb-4">Novo Pedido</h2>
+    <h2 class="text-base font-semibold text-slate-800 mb-4">Novo Pedido</h2>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
@@ -78,7 +78,7 @@
                style="background:var(--bg)">Itens do Pedido</div>
           <template x-for="(item, i) in cart" :key="i">
             <div class="flex items-center gap-3 px-3 py-2 border-t text-sm" style="border-color:var(--border)">
-              <span class="flex-1 text-white" x-text="item.recipeName"></span>
+              <span class="flex-1 text-slate-800" x-text="item.recipeName"></span>
               <span class="text-gray-400" x-text="'x' + item.quantity"></span>
               <span class="font-mono text-blue-300 w-20 text-right"
                     x-text="'R$ ' + (item.quantity * item.unitPrice).toFixed(2)"></span>
@@ -88,7 +88,7 @@
           <div class="flex items-center justify-between px-3 py-2 border-t font-semibold"
                style="border-color:var(--border);background:var(--bg)">
             <span class="text-sm text-gray-300">Total</span>
-            <span class="font-mono text-white" x-text="'R$ ' + cartTotal().toFixed(2)"></span>
+            <span class="font-mono text-slate-800" x-text="'R$ ' + cartTotal().toFixed(2)"></span>
           </div>
         </div>
 
@@ -124,12 +124,12 @@
              class="rounded-xl p-4 space-y-1"
              style="background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.2)">
           <p class="text-xs text-gray-400">Resumo do pedido</p>
-          <p class="text-sm text-white">
+          <p class="text-sm text-slate-800">
             <span x-text="cart.length + ' produto(s)'"></span> para
             <span class="text-blue-300"
                   x-text="customers.find(c=>c.id==customerId)?.name || ''"></span>
           </p>
-          <p class="text-xl font-bold text-white font-mono"
+          <p class="text-xl font-bold text-slate-800 font-mono"
              x-text="'Total: R$ ' + cartTotal().toFixed(2)"></p>
         </div>
 
@@ -148,7 +148,7 @@
   ═══════════════════════════════════════════════════ -->
   <div>
     <div class="flex items-center gap-3 mb-4">
-      <h2 class="text-base font-semibold text-white flex-1">Pedidos Recentes</h2>
+      <h2 class="text-base font-semibold text-slate-800 flex-1">Pedidos Recentes</h2>
       <div class="flex gap-1 text-xs">
         <button @click="filterStatus=''" :class="filterStatus==='' ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'">Todos</button>
         <button @click="filterStatus='PENDING'" :class="filterStatus==='PENDING' ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'">Pendentes</button>
@@ -167,7 +167,7 @@
         <div class="flex flex-wrap items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-800/20"
              @click="open=!open">
           <div class="flex-1 min-w-0">
-            <p class="text-sm font-medium text-white">
+            <p class="text-sm font-medium text-slate-800">
               #{{ o.id }} — {{ o.customer.name if o.customer else 'Cliente removido' }}
             </p>
             <p class="text-xs text-gray-400">{{ o.order_date.strftime('%d/%m/%Y %H:%M') }}</p>
@@ -191,10 +191,10 @@
             {% for oi in o.items %}
             <div class="flex items-center gap-3 px-3 py-2 text-sm border-b last:border-0"
                  style="border-color:var(--border)">
-              <span class="flex-1 text-gray-200">{{ oi.recipe.name if oi.recipe else 'Produto removido' }}</span>
+              <span class="flex-1 text-slate-700">{{ oi.recipe.name if oi.recipe else 'Produto removido' }}</span>
               <span class="text-gray-400">x{{ oi.quantity }}</span>
               <span class="font-mono text-blue-300 w-20 text-right">R$ {{ "%.2f" | format(oi.unit_price) }}/un</span>
-              <span class="font-mono text-white w-20 text-right">R$ {{ "%.2f" | format(oi.quantity * oi.unit_price) }}</span>
+              <span class="font-mono text-slate-800 w-20 text-right">R$ {{ "%.2f" | format(oi.quantity * oi.unit_price) }}</span>
             </div>
             {% endfor %}
           </div>

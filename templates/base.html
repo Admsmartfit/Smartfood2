@@ -144,6 +144,7 @@
       #sidebar.open { transform: translateX(0); }
       #main-wrap { margin-left: 0 !important; }
       #page-content { padding: 1rem; }
+      #mobile-hamburger { display: inline-flex !important; }
     }
 
     /* ── Inputs ───────────────────────────────────────────── */
@@ -331,15 +332,36 @@
     .ts-dropdown .option.selected { background: #dbeafe !important; }
 
     /* ── Dark-class compatibility layer ───────────────────────
-       Many page templates still use dark Tailwind utilities.
-       These overrides keep them readable in light mode.
+       Templates still carry dark Tailwind utilities from the
+       previous dark-theme build. These overrides remap them
+       to readable light-mode equivalents.
     ──────────────────────────────────────────────────────── */
+
+    /* ── text-white → readable dark text in light mode
+       Tailwind CDN injects its sheet at runtime; placing this rule
+       inside a <style> tag is parsed first, so Tailwind may win on
+       cascade. We use a 2-class selector (.text-white.text-white)
+       to raise specificity above a single-class Tailwind rule without
+       needing !important — then restore white explicitly for buttons.
+    ──────────────────────────────────────────────────────── */
+    .text-white.text-white { color: var(--text); }
+    /* Fallback with !important for any edge case */
+    h1.text-white, h2.text-white, h3.text-white, h4.text-white,
+    p.text-white, span.text-white, td.text-white, li.text-white,
+    div.text-white { color: var(--text) !important; }
+
+    /* Buttons unconditionally get white text — highest specificity wins */
+    .btn-primary { color: #fff !important; }
+    .btn-black   { color: #fff !important; }
+
     .text-gray-200, .text-gray-300 { color: var(--text) !important; }
     .text-gray-400                 { color: var(--sub)  !important; }
     .text-gray-500, .text-gray-600 { color: var(--muted)!important; }
-    .border-gray-700, .border-gray-800 { border-color: var(--border) !important; }
+
+    .border-gray-700, .border-gray-800, .border-gray-900 { border-color: var(--border) !important; }
     .divide-gray-700 > * + *,
     .divide-gray-800\/50 > * + * { border-color: var(--border) !important; }
+
     .bg-gray-800\/30, .bg-gray-800\/20, .bg-gray-800\/40 { background-color: #f8fafc !important; }
     .hover\:bg-gray-800\/30:hover, .hover\:bg-gray-700\/50:hover { background-color: #f1f5f9 !important; }
     .bg-gray-800, .bg-gray-900 { background-color: var(--card) !important; }
@@ -585,66 +607,46 @@
   </aside>
 
   <!-- ══════════════════════════════════════════════════════
-       MAIN CONTENT
+       MAIN CONTENT (single layout, responsive via CSS vars)
   ═══════════════════════════════════════════════════════ -->
   <div id="main-wrap"
        :style="`margin-left: ${sidebarOpen ? 'var(--sidebar-w)' : 'var(--sidebar-w-sm)'}`"
-       class="hidden md:flex flex-col">
+       style="display:flex;flex-direction:column;min-height:100vh">
 
-    <!-- Top header -->
+    <!-- Top header (hamburger visible on mobile, hidden on desktop) -->
     <header id="top-header">
-      <!-- Mobile hamburger -->
-      <button class="icon-btn md:hidden" @click="openMobileSidebar()" aria-label="Menu">
+      <button class="icon-btn" @click="openMobileSidebar()" aria-label="Menu"
+              style="display:none" id="mobile-hamburger">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-          <line x1="3" y1="6"  x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+          <line x1="3" y1="6"  x2="21" y2="6"/>
+          <line x1="3" y1="12" x2="21" y2="12"/>
+          <line x1="3" y1="18" x2="21" y2="18"/>
         </svg>
       </button>
 
-      <!-- Breadcrumb area (page title injected by block) -->
       <div class="flex-1 min-w-0">
         {% block header_title %}{% endblock %}
       </div>
 
-      <!-- Ctrl+K search trigger -->
       <button @click="searchOpen = true"
-              class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm transition-colors"
-              style="border-color:var(--border);color:var(--sub);background:var(--bg)"
+              style="display:flex;align-items:center;gap:.5rem;padding:.35rem .75rem;
+                     border-radius:.5rem;border:1px solid var(--border);font-size:.8rem;
+                     background:var(--bg);color:var(--sub);cursor:pointer"
               title="Buscar (Ctrl+K)">
-        🔍
-        <span class="text-xs">Buscar</span>
-        <kbd style="font-size:.6rem;padding:.1rem .35rem;border-radius:.25rem;background:#e2e8f0;color:var(--muted);font-family:inherit">Ctrl K</kbd>
+        🔍 Buscar
+        <kbd style="font-size:.6rem;padding:.1rem .35rem;border-radius:.25rem;
+                    background:#e2e8f0;color:var(--muted);font-family:inherit">Ctrl K</kbd>
       </button>
 
-      <!-- Right side -->
-      <div class="flex items-center gap-2 flex-shrink-0">
-        <span style="font-size:.75rem;color:var(--muted)" class="hidden lg:inline">Cozinha Principal</span>
-        <div style="width:32px;height:32px;border-radius:50%;background:#e2e8f0;border:1px solid var(--border);
-                    display:flex;align-items:center;justify-content:center;font-size:.85rem">👤</div>
+      <div style="display:flex;align-items:center;gap:.75rem;flex-shrink:0">
+        <span style="font-size:.75rem;color:var(--muted)">Cozinha Principal</span>
+        <div style="width:32px;height:32px;border-radius:50%;background:#e2e8f0;
+                    border:1px solid var(--border);display:flex;align-items:center;
+                    justify-content:center;font-size:.85rem">👤</div>
       </div>
     </header>
 
-    <!-- Page content -->
     <main id="page-content">
-      {% block content %}{% endblock %}
-    </main>
-  </div>
-
-  <!-- Mobile fallback (shown only on small screens) -->
-  <div class="md:hidden flex flex-col min-h-screen">
-    <header style="height:var(--header-h);background:var(--surface);border-bottom:1px solid var(--border);
-                   position:sticky;top:0;z-index:40;display:flex;align-items:center;padding:0 1rem;gap:.75rem">
-      <button class="icon-btn" @click="openMobileSidebar()">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-          <line x1="3" y1="6"  x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
-        </svg>
-      </button>
-      <div style="display:flex;align-items:center;gap:.5rem">
-        <div style="width:26px;height:26px;background:var(--accent);border-radius:.375rem;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.65rem;color:white">SF</div>
-        <span style="font-size:.875rem;font-weight:700;color:var(--text)">SmartFood</span>
-      </div>
-      <button @click="searchOpen = true" class="icon-btn ml-auto">🔍</button>
-    </header>
-    <main style="flex:1;padding:1rem">
       {% block content %}{% endblock %}
     </main>
   </div>
@@ -656,7 +658,7 @@
   /* ── App layout state ──────────────────────────────────── */
   function appLayout() {
     return {
-      sidebarOpen: window.innerWidth >= 1024,
+      sidebarOpen: window.innerWidth >= 769,
       searchOpen: false,
       searchQuery: '',
       searchResults: [],
