@@ -133,10 +133,6 @@
                   class="btn btn-secondary btn-sm">
             🖨️ Imprimir / PDF
           </button>
-          <button @click="checkAll()"
-                  class="btn btn-ghost btn-sm text-xs">
-            ✓ Marcar todos
-          </button>
         </div>
       </div>
 
@@ -255,8 +251,10 @@ function comprasApp() {
         const html = await resp.text();
         const target = document.getElementById('shopping-list-result');
         target.innerHTML = html;
-        // Count checkboxes = number of items
-        this.totalItems = target.querySelectorAll('input[type="checkbox"]').length;
+        // Initialize Alpine.js on the injected fragment
+        if (window.Alpine) Alpine.initTree(target);
+        const countEl = target.querySelector('[data-item-count]');
+        this.totalItems = countEl ? parseInt(countEl.dataset.itemCount) : 0;
         this.listGenerated = true;
         toast('Lista gerada!');
       } catch (err) {
@@ -290,10 +288,42 @@ function comprasApp() {
       return `Gerada em ${today} · ${summary}`;
     },
 
-    // ── Check all checkboxes ──────────────────────────────────────
-    checkAll() {
-      document.querySelectorAll('#shopping-list-result input[type="checkbox"]')
-        .forEach(cb => { cb.checked = true; });
+  };
+}
+
+// Alpine component for the interactive shopping list (injected via HTMX/innerHTML)
+function shoppingListApp() {
+  const dataEl = document.getElementById('shopping-list-json');
+  const orderItems = dataEl ? JSON.parse(dataEl.textContent) : {};
+  return {
+    orderItems,
+
+    get grouped() {
+      const groups = {};
+      for (const item of Object.values(this.orderItems)) {
+        const sid = item.selected_supplier_id;
+        const alt = item.alternatives.find(a => a.supplier_id == sid);
+        if (!groups[sid]) {
+          groups[sid] = {
+            name:  alt ? alt.supplier_name  : 'Sem Fornecedor',
+            phone: alt ? alt.supplier_phone : '',
+            items: [],
+            total: 0,
+          };
+        }
+        groups[sid].items.push(item);
+        groups[sid].total += (alt ? alt.price : 0) * item.qty;
+      }
+      return groups;
+    },
+
+    getWhatsAppLink(group) {
+      let text = `Olá ${group.name}! Gostaria de fazer o seguinte pedido:\n\n`;
+      for (const item of group.items) {
+        text += `- ${item.qty.toFixed(3)} ${item.unit} de ${item.name}\n`;
+      }
+      text += '\nAguardo confirmação. Obrigado!';
+      return 'https://wa.me/' + group.phone.replace(/\D/g, '') + '?text=' + encodeURIComponent(text);
     },
   };
 }

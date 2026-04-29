@@ -1,5 +1,4 @@
 import json
-import urllib.parse
 from fastapi import FastAPI, Request, Form, Depends, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
@@ -1048,9 +1047,9 @@ async def save_production_plan(request: Request, db: Session = Depends(get_db)):
     )
 
 
-@app.post("/api/shopping-list", response_class=HTMLResponse)
+@app.post("/api/shopping-list")
 async def generate_shopping_list(request: Request, db: Session = Depends(get_db)):
-    """Gera lista de compras agrupada por FORNECEDOR com custo estimado e link WhatsApp."""
+    """Gera lista de compras interativa com todos os fornecedores por ingrediente."""
     body = await request.json()
     agg: dict[int, dict] = {}
 
@@ -1074,8 +1073,8 @@ async def generate_shopping_list(request: Request, db: Session = Depends(get_db)
                 if ing.id not in agg:
                     agg[ing.id] = {
                         "name": ing.name, "unit": ing.unit, "qty": 0.0,
-                        "supplier_name": "Sem Fornecedor Vinculado",
-                        "supplier_phone": "", "estimated_price": 0.0,
+                        "selected_supplier_id": "0",
+                        "alternatives": [],
                     }
                 agg[ing.id]["qty"] += qty_bruto
 
@@ -1085,30 +1084,30 @@ async def generate_shopping_list(request: Request, db: Session = Depends(get_db)
             'Nenhum insumo encontrado nas receitas selecionadas.</p>'
         )
 
-    # 2. Descobre melhor fornecedor (menor preço cadastrado) para cada ingrediente
-    grouped_by_supplier: dict[str, dict] = {}
+    # 2. Busca TODOS os fornecedores para cada ingrediente, ordenando pelo menor preço
     for ing_id, data in agg.items():
-        cat = (
+        catalog_entries = (
             db.query(models.SupplierCatalog)
             .filter_by(ingredient_id=ing_id)
             .order_by(models.SupplierCatalog.last_price.asc())
-            .first()
+            .all()
         )
-        if cat and cat.supplier:
-            data["supplier_name"]  = cat.supplier.name
-            data["supplier_phone"] = cat.supplier.contact_info or ""
-            data["estimated_price"] = (cat.last_price or 0.0) * data["qty"]
+        for cat in catalog_entries:
+            if cat.supplier:
+                data["alternatives"].append({
+                    "supplier_id":    str(cat.supplier_id),
+                    "supplier_name":  cat.supplier.name,
+                    "supplier_phone": cat.supplier.contact_info or "",
+                    "price":          cat.last_price or 0.0,
+                    "brand":          cat.manufacturer.brand_name if cat.manufacturer else "Genérica",
+                })
+        # Pré-seleciona o mais barato (já ordenado por preço)
+        if data["alternatives"]:
+            data["selected_supplier_id"] = data["alternatives"][0]["supplier_id"]
 
-        sup_name = data["supplier_name"]
-        if sup_name not in grouped_by_supplier:
-            grouped_by_supplier[sup_name] = {
-                "phone": data["supplier_phone"], "items": [], "total": 0.0,
-            }
-        grouped_by_supplier[sup_name]["items"].append(data)
-        grouped_by_supplier[sup_name]["total"] += data["estimated_price"]
-
-    # 3. Salva no banco para cruzamento com /precos (mantido da versão anterior)
+    # 3. Salva no banco para cruzamento com /precos
     save_banner = ""
+    save_ok = False
     try:
         s_list = models.ShoppingList(
             name=f"Lista gerada em {datetime.utcnow().strftime('%d/%m/%Y às %H:%M')}"
@@ -1121,120 +1120,24 @@ async def generate_shopping_list(request: Request, db: Session = Depends(get_db)
             ))
         db.commit()
         save_banner = (
-            '<div class="mb-4 px-3 py-2 rounded-lg text-xs flex items-center gap-2"'
-            '     style="background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d">'
-            '  ✓ Lista salva — disponível em '
-            '  <a href="/precos" class="underline font-medium">Cotações</a>'
-            '  para cruzamento com fornecedores.'
-            '</div>'
+            '✓ Lista salva — disponível em '
+            '<a href="/precos" class="underline font-medium">Cotações</a>'
+            ' para cruzamento com fornecedores.'
         )
+        save_ok = True
     except Exception as exc:
         db.rollback()
-        save_banner = (
-            f'<div class="mb-4 px-3 py-2 rounded-lg text-xs"'
-            f'     style="background:#fefce8;border:1px solid #fde047;color:#854d0e">'
-            f'  ⚠ Lista gerada mas não salva: {exc}</div>'
-        )
+        save_banner = f'⚠ Lista gerada mas não salva: {exc}'
 
-    # 4. Renderiza cards por fornecedor + botão WhatsApp
-    html_parts = [save_banner]
+    # 4. Converte chaves para string (JSON serializa int keys como strings de qualquer forma)
+    items_str_keys = {str(k): v for k, v in agg.items()}
 
-    # Fornecedores reais primeiro, "Sem Fornecedor" por último
-    sorted_suppliers = sorted(
-        grouped_by_supplier.items(),
-        key=lambda kv: (kv[0] == "Sem Fornecedor Vinculado", kv[0])
-    )
-
-    for sup_name, sup_data in sorted_suppliers:
-        is_no_supplier = (sup_name == "Sem Fornecedor Vinculado")
-        border_color   = "#f59e0b" if is_no_supplier else "#2563eb"
-
-        items_html = ""
-        whatsapp_lines = []
-        for i in sorted(sup_data["items"], key=lambda x: x["name"]):
-            price_txt = (
-                f'<span class="font-mono text-xs ml-2" style="color:var(--muted)">'
-                f'R$ {i["estimated_price"]:.2f}</span>'
-                if i["estimated_price"] > 0 else ""
-            )
-            items_html += (
-                f'<li class="flex justify-between items-center py-2.5 border-b last:border-0"'
-                f'    style="border-color:var(--border)">'
-                f'  <label class="flex items-center gap-2 flex-1 cursor-pointer text-sm"'
-                f'          style="color:var(--text)">'
-                f'    <input type="checkbox" class="w-4 h-4 accent-blue-600 flex-shrink-0">'
-                f'    {i["name"]}'
-                f'  </label>'
-                f'  <span class="font-bold font-mono text-sm flex-shrink-0" style="color:var(--text)">'
-                f'    {i["qty"]:.3f} <span class="font-normal text-xs" style="color:var(--muted)">{i["unit"]}</span>'
-                f'    {price_txt}'
-                f'  </span>'
-                f'</li>'
-            )
-            whatsapp_lines.append(f"- {i['qty']:.3f} {i['unit']} de {i['name']}")
-
-        # Monta mensagem e link WhatsApp
-        clean_phone = (
-            sup_data["phone"]
-            .replace(" ", "").replace("-", "")
-            .replace("(", "").replace(")", "")
-        )
-        if clean_phone and not is_no_supplier:
-            wa_msg = (
-                f"Olá {sup_name}! Gostaria de fazer o seguinte pedido:\n\n"
-                + "\n".join(whatsapp_lines)
-                + "\n\nAguardo confirmação. Obrigado!"
-            )
-            wa_href = f"https://wa.me/{clean_phone}?text={urllib.parse.quote(wa_msg)}"
-            cta_html = (
-                f'<a href="{wa_href}" target="_blank" rel="noopener"'
-                f'   class="mt-4 flex items-center justify-center gap-2 w-full py-2.5'
-                f'          font-semibold text-sm rounded-lg transition-colors"'
-                f'   style="background:#16a34a;color:#fff">'
-                f'  📱 Enviar Pedido via WhatsApp'
-                f'</a>'
-            )
-        elif is_no_supplier:
-            cta_html = (
-                '<p class="mt-3 text-xs px-3 py-2 rounded-lg"'
-                '   style="background:#fefce8;border:1px solid #fde047;color:#854d0e">'
-                '  ⚠️ Cadastre o fornecedor e telefone em '
-                '  <a href="/cadastros" class="underline font-medium">Insumos</a>'
-                '  para enviar via WhatsApp.'
-                '</p>'
-            )
-        else:
-            cta_html = (
-                '<p class="mt-3 text-xs" style="color:var(--muted)">'
-                '  Cadastre o telefone do fornecedor em '
-                '  <a href="/cadastros" style="color:var(--accent)" class="underline">Insumos</a>'
-                '  para habilitar o botão WhatsApp.'
-                '</p>'
-            )
-
-        total_txt = (
-            f'<span class="text-sm font-bold font-mono" style="color:var(--accent)">'
-            f'R$ {sup_data["total"]:.2f}</span>'
-            if sup_data["total"] > 0 else ""
-        )
-        icon = "⚠️" if is_no_supplier else "🏢"
-
-        html_parts.append(
-            f'<div class="card p-5 mb-4" style="border-left:4px solid {border_color}">'
-            f'  <div class="flex items-start justify-between gap-2 mb-3">'
-            f'    <div>'
-            f'      <h3 class="font-bold text-base" style="color:var(--text)">{icon} {sup_name}</h3>'
-            f'      <p class="text-xs mt-0.5" style="color:var(--muted)">'
-            f'        {len(sup_data["items"])} item(ns) · Estimado: {total_txt or "sem preço"}'
-            f'      </p>'
-            f'    </div>'
-            f'  </div>'
-            f'  <ul class="divide-y" style="border-color:var(--border)">{items_html}</ul>'
-            f'  {cta_html}'
-            f'</div>'
-        )
-
-    return HTMLResponse("".join(html_parts))
+    return templates.TemplateResponse("fragments/shopping_list_interactive.html", {
+        "request":     request,
+        "items":       items_str_keys,
+        "save_banner": save_banner,
+        "save_ok":     save_ok,
+    })
 
 
 # ── Module 2: Labels ──────────────────────────────────────────────────────────

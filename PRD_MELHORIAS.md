@@ -1,95 +1,131 @@
-Este PRD (Documento de Requisitos do Produto) detalha a implementação da funcionalidade de atalho para vinculação direta de produtos ao catálogo a partir do cartão do fornecedor, otimizando o fluxo de cadastro no **SmartFood Ops 360**.
+Para atender à sua necessidade de gerenciar múltiplos fornecedores para um mesmo insumo e permitir a escolha de para quem enviar o pedido via WhatsApp, precisamos tornar a lista de compras **interativa**.
 
----
+A melhor prática de mercado para sistemas de *procurement* (como o *MarketMan*) é agrupar por fornecedor sugerido (o mais barato), mas permitir a **re-atribuição rápida** de itens entre fornecedores antes de fechar o pedido.
 
-# 📋 PRD: Atalho de Vinculação Direta ao Catálogo
+Aqui estão os passos para implementar essa funcionalidade:
 
-## 1. Visão Geral
-Atualmente, para vincular um insumo a um fornecedor, o usuário deve rolar manualmente até a seção "Catálogo de Compras" no final da página de Cadastros e selecionar o fornecedor no menu suspenso. Esta melhoria introduz um botão de ação direta em cada cartão de fornecedor que automatiza esse processo, melhorando a descoberta da funcionalidade e a velocidade de operação.
+### 1. Atualizar o Backend (`main.py`)
+Precisamos modificar a lógica de geração da lista para que ela identifique **todos** os fornecedores que vendem cada ingrediente, e não apenas o mais barato.
 
-## 2. Objetivos
-* **Aumentar a usabilidade:** Tornar óbvia a relação entre Fornecedores e Catálogo.
-* **Reduzir cliques:** Eliminar a necessidade de busca manual do fornecedor no formulário de catálogo.
-* **Melhorar o fluxo:** Permitir que o usuário, ao cadastrar um novo fornecedor, já inicie a montagem de seu catálogo imediatamente.
+Substitua a função `generate_shopping_list` no seu `main.py`:
 
-## 3. Histórias de Usuário
-| Como... | Eu quero... | Para que... |
-| :--- | :--- | :--- |
-| Comprador | Ter um botão "+ Adicionar ao Catálogo" no cartão do fornecedor | Eu possa vincular insumos a ele sem precisar procurá-lo novamente em uma lista longa. |
-| Operador | Que a tela role automaticamente para o formulário | Eu tenha certeza de que a ação foi iniciada e saiba onde preencher os dados. |
+```python
+@app.post("/api/shopping-list", response_class=HTMLResponse)
+async def generate_shopping_list(request: Request, db: Session = Depends(get_db)):
+    body = await request.json()
+    agg = {} # Lógica de agregação de ingredientes por ID
+    
+    # ... (mantenha o loop de agregação de porções igual ao anterior) ...
 
-## 4. Requisitos Funcionais
+    # 2. Busca TODOS os fornecedores para cada ingrediente do catálogo
+    for ing_id, data in agg.items():
+        # Busca todas as entradas no catálogo para este ingrediente
+        catalog_entries = db.query(models.SupplierCatalog).filter_by(ingredient_id=ing_id).all()
+        
+        data["alternatives"] = []
+        for entry in catalog_entries:
+            data["alternatives"].append({
+                "supplier_id": str(entry.supplier_id),
+                "supplier_name": entry.supplier.name,
+                "supplier_phone": entry.supplier.contact_info or "",
+                "price": entry.last_price or 0.0,
+                "brand": entry.manufacturer.brand_name if entry.manufacturer else "Genérica"
+            })
+        
+        # Ordena por preço e define o primeiro como padrão
+        data["alternatives"].sort(key=lambda x: x["price"])
+        if data["alternatives"]:
+            data["selected_supplier"] = data["alternatives"][0]
+        else:
+            data["selected_supplier"] = {"supplier_id": "0", "supplier_name": "Sem Fornecedor", "supplier_phone": "", "price": 0.0}
 
-### RF01: Botão de Ação no Cartão
-Cada item na lista de fornecedores (`#suppliers-list`) deve conter um botão primário ou secundário com o texto ou ícone de "+ Catálogo".
+    # 3. Organiza os dados para o componente Alpine.js
+    # Passamos os dados processados para um template ou geramos o HTML compatível
+    # Aqui vamos usar uma abordagem onde o Alpine.js gerencia a lista no cliente
+    return templates.TemplateResponse("fragments/shopping_list_interactive.html", {
+        "request": request,
+        "items": agg,
+        "suppliers": {s.id: s.name for s in db.query(models.Supplier).all()}
+    })
+```
 
-### RF02: Preenchimento Automático (Auto-fill)
-Ao clicar no botão, o valor do `supplier_id` no formulário de catálogo (`#catalog-form`) deve ser alterado automaticamente para o ID do fornecedor correspondente ao cartão clicado.
-
-### RF03: Rolagem Suave (Smooth Scroll)
-O sistema deve realizar uma rolagem suave da página até a seção de cadastro de catálogo para manter o contexto visual do usuário.
-
-## 5. Requisitos de Design (UI/UX)
-* **Localização:** O botão deve ficar posicionado próximo aos botões de Editar/Excluir no modo de visualização do fornecedor.
-* **Estilo:** Seguir o padrão de botões secundários do sistema para não competir visualmente com a ação de "Salvar" principal.
-* **Feedback:** O campo de fornecedor no formulário de destino pode piscar brevemente ou ser destacado para confirmar o preenchimento.
-
----
-
-## 6. Especificação Técnica (Implementação Sugerida)
-
-### A. Alteração no Template (`templates/index.html`)
-No loop de fornecedores, adicione o botão com uma chamada Alpine.js:
+### 2. Novo Fragmento Interativo (`templates/fragments/shopping_list_interactive.html`)
+Este novo fragmento usa o **Alpine.js** para permitir que o usuário mova itens entre os fornecedores em tempo real antes de enviar o WhatsApp.
 
 ```html
-<div class="flex gap-1 flex-shrink-0">
-  <button @click="fillCatalogSupplier('{{ s.id }}')" 
-          class="icon-btn text-blue-400 hover:bg-blue-900/20" 
-          title="Vincular produto a este fornecedor">
-    ➕
-  </button>
-  
-  <button @click="editing=true" class="icon-btn hover:text-blue-400">✏️</button>
-  </div>
-```
+<div x-data="{
+    // Dados injetados do servidor
+    orderItems: {{ items | tojson | safe }},
+    
+    // Agrupar itens pelo fornecedor selecionado
+    get grouped() {
+        let groups = {};
+        Object.values(this.orderItems).forEach(item => {
+            let sId = item.selected_supplier.supplier_id;
+            if (!groups[sId]) {
+                groups[sId] = {
+                    name: item.selected_supplier.supplier_name,
+                    phone: item.selected_supplier.supplier_phone,
+                    items: []
+                };
+            }
+            groups[sId].items.push(item);
+        });
+        return groups;
+    },
 
-### B. Lógica Alpine.js (`templates/index.html` ou `app.js`)
-Adicione a função auxiliar ao escopo do `crudApp()`:
-
-```javascript
-function crudApp() {
-  return {
-    // ... funções existentes ...
-
-    fillCatalogSupplier(supplierId) {
-      // 1. Encontra o select de fornecedor no formulário de catálogo
-      const catalogSelect = document.querySelector('select[name="supplier_id"]');
-      
-      if (catalogSelect) {
-        // 2. Preenche o valor
-        catalogSelect.value = supplierId;
-        
-        // 3. Rola até a seção (usando o cabeçalho do catálogo como âncora)
-        const catalogSection = document.getElementById('catalog-body').closest('.section-card');
-        catalogSection.scrollIntoView({ behavior: 'smooth' });
-        
-        // 4. Feedback visual opcional: focar no próximo campo (Ingrediente)
-        setTimeout(() => {
-          document.querySelector('select[name="ingredient_id"]').focus();
-          toast('Fornecedor selecionado no catálogo');
-        }, 500);
-      }
+    // Gerar link do WhatsApp dinamicamente
+    getWhatsAppLink(supplier) {
+        let text = 'Olá ' + supplier.name + '! Gostaria de fazer o seguinte pedido:\n\n';
+        supplier.items.forEach(i => {
+            text += '- ' + i.qty.toFixed(2) + ' ' + i.unit + ' de ' + i.name + '\n';
+        });
+        return 'https://wa.me/' + supplier.phone.replace(/\D/g,'') + '?text=' + encodeURIComponent(text);
     }
-  };
-}
+}" class="space-y-6">
+
+    <template x-for="(group, sId) in grouped" :key="sId">
+        <div class="card p-5 border-l-4" :class="sId === '0' ? 'border-red-500' : 'border-blue-500'">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="font-bold text-lg text-white" x-text="group.name"></h3>
+                <span class="text-xs text-gray-500" x-text="group.items.length + ' itens'"></span>
+            </div>
+
+            <ul class="divide-y divide-gray-800">
+                <template x-for="item in group.items" :key="item.name">
+                    <li class="py-3 flex flex-col gap-2">
+                        <div class="flex justify-between">
+                            <span class="text-sm font-medium text-gray-200" x-text="item.name"></span>
+                            <span class="font-mono text-sm text-blue-400" x-text="item.qty.toFixed(2) + ' ' + item.unit"></span>
+                        </div>
+                        
+                        <div x-show="item.alternatives.length > 1" class="flex items-center gap-2">
+                            <label class="text-[10px] text-gray-500 uppercase">Trocar fornecedor:</label>
+                            <select x-model="item.selected_supplier" class="text-xs p-1 bg-slate-900 border-slate-700 rounded">
+                                <template x-for="alt in item.alternatives" :key="alt.supplier_id">
+                                    <option :value="alt" x-text="alt.supplier_name + ' (R$ ' + alt.price.toFixed(2) + ')'"></option>
+                                </template>
+                            </select>
+                        </div>
+                    </li>
+                </template>
+            </ul>
+
+            <div x-show="sId !== '0' && group.phone" class="mt-4 pt-4 border-t border-gray-800">
+                <a :href="getWhatsAppLink(group)" target="_blank" 
+                   class="btn btn-primary btn-full bg-green-600 hover:bg-green-500 text-xs h-10">
+                    📱 Enviar Lista para <span x-text="group.name" class="ml-1"></span>
+                </a>
+            </div>
+        </div>
+    </template>
+</div>
 ```
 
-## 7. Critérios de Aceite
-1. O botão deve estar visível em todos os fornecedores listados.
-2. Clicar no botão de "Fornecedor A" deve selecionar o "Fornecedor A" no formulário de catálogo.
-3. A página deve rolar até o formulário sem recarregar (SPA feel).
-4. O funcionamento não deve interferir na capacidade de selecionar fornecedores manualmente no formulário.
+### O que essa melhoria entrega:
+1.  **Flexibilidade Total:** Se um fornecedor estiver sem estoque, o usuário simplesmente muda o item para outro fornecedor no dropdown e o botão do WhatsApp se atualiza na hora.
+2.  **Visibilidade de Preço:** O dropdown de "Trocar Fornecedor" já mostra o preço de cada um, permitindo decidir se vale a pena pagar um pouco mais para centralizar a entrega.
+3.  **WhatsApp Inteligente:** O link não é gerado uma única vez; ele é uma função reativa do Alpine.js que recalcula o texto da mensagem toda vez que você move um item de um card para o outro.
+4.  **Organização:** Itens que não possuem nenhum fornecedor cadastrado são automaticamente isolados em um card de alerta "Sem Fornecedor".
 
-## 8. Melhorias Futuras Relacionadas
-* **Badge de Contagem:** Mostrar no cartão do fornecedor quantos itens ele já possui no catálogo.
-* **Filtro Rápido:** Ao clicar no nome de um fornecedor, filtrar a tabela de catálogo abaixo para mostrar apenas os itens dele.
+**Dica de implementação:** Certifique-se de que o telefone do fornecedor no cadastro inclua o código do país (ex: 5511999999999) para que o link do WhatsApp funcione corretamente sem precisar de edição manual.
