@@ -1,0 +1,25 @@
+[Unit]
+Description=SmartFood Ops 360
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Altere "smartfood" para o nome do seu usuário Linux
+User=smartfood
+Group=smartfood
+# Altere o caminho abaixo para onde você colocou o projeto
+WorkingDirectory=/opt/smartfood
+ExecStart=/opt/smartfood/venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=smartfood
+
+# Variáveis de ambiente
+Environment="SECRET_KEY=MUDE-ESTA-CHAVE-SECRETA-ANTES-DE-USAR"
+Environment="PYTHONUNBUFFERED=1"
+
+[Install]
+WantedBy=multi-user.target
