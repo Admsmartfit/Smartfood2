@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Login — SmartFood Ops 360</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .dot-grid {
+      background-color: #f1f5f9;
+      background-image: radial-gradient(circle, #cbd5e1 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+    .login-card {
+      background: #fff;
+      border-radius: 1rem;
+      box-shadow: 0 20px 60px rgba(0,0,0,.12);
+      padding: 2.5rem 2rem;
+      width: 100%;
+      max-width: 400px;
+    }
+    input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+    .btn-login {
+      background: #2563eb; color: #fff; border: none; border-radius: .5rem;
+      min-height: 48px; width: 100%; font-size: .95rem; font-weight: 600;
+      cursor: pointer; transition: background .15s; font-family: inherit;
+    }
+    .btn-login:hover { background: #1d4ed8; }
+    .btn-login:disabled { opacity: .6; cursor: not-allowed; }
+    .field {
+      width: 100%; border: 1px solid #e2e8f0; border-radius: .5rem;
+      padding: .65rem .85rem; font-size: .9rem; font-family: inherit;
+      min-height: 48px; background: #fff; color: #1e293b; transition: border-color .15s, box-shadow .15s;
+    }
+    label { display: block; font-size: .8rem; font-weight: 600; color: #475569; margin-bottom: .35rem; }
+  </style>
+</head>
+<body class="dot-grid min-h-screen flex items-center justify-center p-4">
+
+  <div class="login-card">
+    <!-- Logo -->
+    <div class="flex items-center gap-3 mb-8">
+      <div style="width:40px;height:40px;background:#2563eb;border-radius:.6rem;
+                  display:flex;align-items:center;justify-content:center;
+                  font-weight:800;font-size:.85rem;color:white;flex-shrink:0">SF</div>
+      <div>
+        <p style="font-size:1.1rem;font-weight:700;color:#0f172a;line-height:1.2">SmartFood</p>
+        <p style="font-size:.7rem;color:#94a3b8;letter-spacing:.05em">OPS 360</p>
+      </div>
+    </div>
+
+    <h1 style="font-size:1.35rem;font-weight:700;color:#0f172a;margin-bottom:.4rem">Entrar</h1>
+    <p style="font-size:.83rem;color:#64748b;margin-bottom:1.75rem">Acesse o painel com suas credenciais.</p>
+
+    <!-- Erro inline -->
+    {% if erro %}
+    <div role="alert" style="background:#fef2f2;border:1px solid #fecaca;border-radius:.5rem;
+         padding:.75rem 1rem;margin-bottom:1.25rem;font-size:.85rem;color:#dc2626;display:flex;gap:.5rem;align-items:center">
+      <span>⚠</span> <span>{{ erro }}</span>
+    </div>
+    {% endif %}
+
+    <form method="post" action="/login">
+      <div style="margin-bottom:1.1rem">
+        <label for="email">E-mail</label>
+        <input
+          id="email" name="email" type="email" required autocomplete="email"
+          class="field" placeholder="seu@email.com"
+          aria-describedby="{% if erro %}login-erro{% endif %}"/>
+      </div>
+
+      <div style="margin-bottom:1.75rem">
+        <label for="senha">Senha</label>
+        <input
+          id="senha" name="senha" type="password" required autocomplete="current-password"
+          class="field" placeholder="••••••••"
+          aria-describedby="{% if erro %}login-erro{% endif %}"/>
+      </div>
+
+      <button type="submit" class="btn-login">Entrar</button>
+    </form>
+
+    <p style="font-size:.75rem;color:#94a3b8;text-align:center;margin-top:1.5rem">
+      SmartFood Ops 360 · Acesso restrito
+    </p>
+  </div>
+
+</body>
+</html>

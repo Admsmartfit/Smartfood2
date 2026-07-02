@@ -580,6 +580,10 @@
         <span class="nav-icon">🏷️</span>
         <span class="nav-label" x-show="sidebarOpen">Lotes e Etiquetas</span>
       </a>
+      <a href="/inteligencia" class="nav-item {% if active_page == 'inteligencia' %}active{% endif %}">
+        <span class="nav-icon">🧠</span>
+        <span class="nav-label" x-show="sidebarOpen">Inteligência</span>
+      </a>
 
       <hr x-show="sidebarOpen" style="border:none;border-top:1px solid var(--border);margin:.5rem .75rem">
       <p class="sidebar-section-label" x-show="sidebarOpen">Operação</p>
@@ -594,6 +598,17 @@
       <a href="/pedidos"       class="nav-item {% if active_page == 'pedidos' %}active{% endif %}">
         <span class="nav-icon">🧾</span>
         <span class="nav-label" x-show="sidebarOpen">Pedidos</span>
+      </a>
+
+      <hr x-show="sidebarOpen" style="border:none;border-top:1px solid var(--border);margin:.5rem .75rem">
+      <p class="sidebar-section-label" x-show="sidebarOpen">Administração</p>
+      <a href="/admin/loja"     class="nav-item {% if active_page == 'admin_loja' %}active{% endif %}">
+        <span class="nav-icon">🛒</span>
+        <span class="nav-label" x-show="sidebarOpen">Catálogo Loja</span>
+      </a>
+      <a href="/admin/usuarios" class="nav-item {% if active_page == 'admin_usuarios' %}active{% endif %}">
+        <span class="nav-icon">👥</span>
+        <span class="nav-label" x-show="sidebarOpen">Usuários</span>
       </a>
 
     </nav>
@@ -643,10 +658,12 @@
       </button>
 
       <div style="display:flex;align-items:center;gap:.75rem;flex-shrink:0">
-        <span style="font-size:.75rem;color:var(--muted)">Cozinha Principal</span>
-        <div style="width:32px;height:32px;border-radius:50%;background:#e2e8f0;
-                    border:1px solid var(--border);display:flex;align-items:center;
-                    justify-content:center;font-size:.85rem">👤</div>
+        <span style="font-size:.75rem;color:var(--muted)">{{ request.session.get('user_nome', 'Usuário') }}</span>
+        <a href="/logout"
+           style="width:32px;height:32px;border-radius:50%;background:#e2e8f0;
+                  border:1px solid var(--border);display:flex;align-items:center;
+                  justify-content:center;font-size:.85rem;text-decoration:none"
+           title="Sair">🚪</a>
       </div>
     </header>
 

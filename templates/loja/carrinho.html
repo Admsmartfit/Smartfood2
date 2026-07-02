@@ -1,0 +1,162 @@
+{% extends "loja/base_loja.html" %}
+
+{% block title %}Carrinho — SmartFood Portal{% endblock %}
+
+{% block content %}
+<div x-data="carrinhoApp()" x-init="init()">
+
+  <!-- Header -->
+  <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem">
+    <a href="/loja" style="color:var(--sub);text-decoration:none;font-size:.85rem">← Voltar ao Catálogo</a>
+    <h1 style="font-size:1.3rem;font-weight:700">🛒 Seu Pedido</h1>
+  </div>
+
+  <!-- Carrinho vazio -->
+  <div x-show="cart.length === 0" x-cloak
+       style="text-align:center;padding:4rem 1rem;color:var(--muted)">
+    <p style="font-size:2.5rem">🛍️</p>
+    <p style="margin-top:.75rem;font-size:1rem">Seu carrinho está vazio.</p>
+    <a href="/loja" class="btn btn-primary" style="margin-top:1rem">Ver Catálogo</a>
+  </div>
+
+  <!-- Itens -->
+  <div x-show="cart.length > 0">
+    <div style="background:#fff;border:1px solid var(--border);border-radius:.75rem;overflow:hidden;margin-bottom:1rem">
+      <template x-for="(item, idx) in cart" :key="item.id">
+        <div style="display:flex;align-items:center;gap:1rem;padding:1rem 1.25rem;border-bottom:1px solid var(--border)">
+          <div style="flex:1;min-width:0">
+            <p style="font-weight:600" x-text="item.nome"></p>
+            <p style="font-size:.8rem;color:var(--sub)" x-text="item.qty + ' ' + item.unidade + '(s) · ' + item.qty * item.rendimento + ' un.'"></p>
+          </div>
+          <div style="display:flex;align-items:center;gap:.5rem">
+            <button @click="item.qty=Math.max(1,item.qty-1)" class="qty-btn">−</button>
+            <span class="qty-display" x-text="item.qty"></span>
+            <button @click="item.qty++" class="qty-btn">+</button>
+          </div>
+          <p style="font-weight:700;min-width:80px;text-align:right;font-size:.95rem"
+             x-text="'R$ ' + (item.qty * item.preco).toFixed(2)"></p>
+          <button @click="removeItem(idx)" class="qty-btn" style="color:#ef4444;border-color:#fecaca">✕</button>
+        </div>
+      </template>
+
+      <!-- Subtotal -->
+      <div style="padding:1rem 1.25rem;display:flex;justify-content:space-between;background:#f8fafc">
+        <span style="font-weight:600">Subtotal</span>
+        <span style="font-weight:700;font-size:1.05rem" x-text="'R$ ' + cartTotal.toFixed(2)"></span>
+      </div>
+    </div>
+
+    <!-- Observações -->
+    <div style="margin-bottom:1.25rem">
+      <label style="display:block;font-size:.82rem;font-weight:600;color:var(--sub);margin-bottom:.35rem">
+        📝 Observações para este pedido (opcional)
+      </label>
+      <textarea x-model="notes" rows="2"
+                style="width:100%;padding:.6rem .85rem;border:1px solid var(--border);border-radius:.5rem;
+                       font-family:inherit;font-size:.875rem;resize:vertical;background:#fff;color:var(--text)"
+                placeholder="Ex: entrega às terças, embalagem específica…"></textarea>
+    </div>
+
+    <!-- Resultado -->
+    <div id="pedido-resultado"></div>
+
+    <!-- Botões de ação -->
+    <div style="display:flex;flex-direction:column;gap:.75rem">
+
+      <!-- Confirmar no sistema -->
+      <button @click="confirmarPedido()"
+              :disabled="enviando"
+              class="btn btn-primary btn-full"
+              style="min-height:52px;font-size:1rem"
+              :class="enviando ? 'opacity-60 cursor-not-allowed' : ''">
+        <span x-show="!enviando">✅ Confirmar Pedido</span>
+        <span x-show="enviando" x-cloak>⏳ Enviando…</span>
+      </button>
+      <p style="font-size:.75rem;color:var(--muted);text-align:center;margin-top:-.25rem">
+        Registra no sistema e notifica a produção
+      </p>
+
+      <!-- Divider -->
+      <div style="display:flex;align-items:center;gap:.75rem">
+        <div style="flex:1;height:1px;background:var(--border)"></div>
+        <span style="font-size:.78rem;color:var(--muted);font-weight:500">OU</span>
+        <div style="flex:1;height:1px;background:var(--border)"></div>
+      </div>
+
+      <!-- WhatsApp -->
+      <a :href="whatsappLink()" target="_blank"
+         class="btn btn-full"
+         style="background:#25d366;color:#fff;min-height:52px;font-size:1rem">
+        📱 Enviar via WhatsApp
+      </a>
+      <p style="font-size:.75rem;color:var(--muted);text-align:center;margin-top:-.25rem">
+        Abre o WhatsApp com o pedido formatado
+      </p>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const WA_NUMBER = "{{ config.whatsapp_contato if config else '' }}".replace(/\D/g,'');
+const CUSTOMER_NAME = "{{ customer.name if customer else user_nome }}";
+
+function carrinhoApp() {
+  return {
+    cart: JSON.parse(localStorage.getItem('sf_cart') || '[]'),
+    notes: '',
+    enviando: false,
+
+    get cartTotal() { return this.cart.reduce((s,i)=>s+i.qty*i.preco,0); },
+
+    init() {},
+
+    removeItem(idx) { this.cart.splice(idx,1); this.saveCart(); },
+    saveCart() { localStorage.setItem('sf_cart', JSON.stringify(this.cart)); },
+
+    whatsappLink() {
+      if (!WA_NUMBER) return '#';
+      const lines = this.cart.map(i =>
+        `• ${i.qty} ${i.unidade}(s) de ${i.nome} (${i.qty * i.rendimento} un.)`
+      ).join('\n');
+      const msg = `Olá! Sou *${CUSTOMER_NAME}*.\nGostaria de fazer o seguinte pedido:\n\n${lines}\n\n*Total estimado: R$ ${this.cartTotal.toFixed(2)}*\n\nAguardo confirmação. Obrigado!`;
+      return `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(msg)}`;
+    },
+
+    async confirmarPedido() {
+      if (this.cart.length === 0 || this.enviando) return;
+      this.enviando = true;
+      try {
+        const items = this.cart.map(i => ({
+          recipe_id: i.id, quantity: i.qty, unit_price: i.preco
+        }));
+        const res = await fetch('/loja/orders', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({items, notes: this.notes}),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          localStorage.removeItem('sf_cart');
+          this.cart = [];
+          document.getElementById('pedido-resultado').innerHTML =
+            `<div class="alert-success" style="font-size:.95rem;padding:1rem 1.25rem">
+              ✅ <strong>Pedido #${data.id} registrado!</strong><br>
+              <small>Em breve entraremos em contato. Total: R$ ${data.total.toFixed(2)}</small>
+             </div>`;
+        } else {
+          throw new Error(data.detail || 'Erro ao confirmar pedido');
+        }
+      } catch(e) {
+        document.getElementById('pedido-resultado').innerHTML =
+          `<div class="alert-error">❌ ${e.message}</div>`;
+      } finally {
+        this.enviando = false;
+      }
+    },
+  };
+}
+</script>
+{% endblock %}

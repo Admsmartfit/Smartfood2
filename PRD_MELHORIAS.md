@@ -1,131 +1,170 @@
-Para atender à sua necessidade de gerenciar múltiplos fornecedores para um mesmo insumo e permitir a escolha de para quem enviar o pedido via WhatsApp, precisamos tornar a lista de compras **interativa**.
+A sua necessidade reflete exatamente como um setor de **Procurement (Compras)** profissional opera! Você não envia um pedido de compra cego; você faz uma **Cotação (RFQ - Request for Quotation)**. 
 
-A melhor prática de mercado para sistemas de *procurement* (como o *MarketMan*) é agrupar por fornecedor sugerido (o mais barato), mas permitir a **re-atribuição rápida** de itens entre fornecedores antes de fechar o pedido.
+Se você precisa de Farinha e de Frango, e tem 3 fornecedores diferentes que vendem isso, você quer poder enviar a cotação para os 3, ou escolher enviar a Farinha só para um e o Frango para outro.
 
-Aqui estão os passos para implementar essa funcionalidade:
+Para resolver isso, vou mudar a lógica de inteligência do seu sistema. Em vez de o sistema escolher "um único fornecedor" e te prender a ele, o sistema vai gerar um **Card para cada fornecedor compatível**. Dentro desse card, todos os itens que ele vende terão um **Check (caixa de seleção)**. Assim, você marca/desmarca o que quer cotar com ele, e o botão do WhatsApp se atualiza na mesma hora!
 
-### 1. Atualizar o Backend (`main.py`)
-Precisamos modificar a lógica de geração da lista para que ela identifique **todos** os fornecedores que vendem cada ingrediente, e não apenas o mais barato.
+Aqui está a substituição completa da rota no seu `main.py`.
 
-Substitua a função `generate_shopping_list` no seu `main.py`:
+### 🛠️ Como implementar:
+
+Abra o arquivo `main.py`, encontre a função `@app.post("/api/shopping-list")` inteira e **substitua por este código abaixo**:
 
 ```python
+import json # Garanta que isso está no topo do seu main.py se já não estiver
+
 @app.post("/api/shopping-list", response_class=HTMLResponse)
 async def generate_shopping_list(request: Request, db: Session = Depends(get_db)):
+    """Gera lista agrupada por TODOS os Fornecedores compatíveis para envio de Cotações."""
     body = await request.json()
-    agg = {} # Lógica de agregação de ingredientes por ID
+    agg: dict[int, dict] = {}
     
-    # ... (mantenha o loop de agregação de porções igual ao anterior) ...
+    # 1. Agrupa os ingredientes e multiplica pelas porções
+    for entry in body:
+        recipe_id = int(entry.get("recipe_id", 0))
+        portions  = float(entry.get("portions", 1) or 1)
+        recipe = db.query(models.Recipe).filter_by(id=recipe_id).first()
+        if not recipe: continue
+        
+        base_portions = recipe.rendimento_unidades if recipe.rendimento_unidades else 1
+        multiplier = portions / base_portions
 
-    # 2. Busca TODOS os fornecedores para cada ingrediente do catálogo
+        for section in recipe.sections:
+            for item in section.items:
+                ing = item.ingredient
+                if not ing: continue
+                qty_bruto = item.quantity * item.correction_factor * multiplier
+                if ing.id not in agg:
+                    agg[ing.id] = {
+                        "name": ing.name, "unit": ing.unit, "qty": 0.0,
+                        "category": ing.category or "Outros",
+                        "alternatives": []
+                    }
+                agg[ing.id]["qty"] += qty_bruto
+
+    if not agg:
+        return HTMLResponse('<p class="text-center text-gray-500 py-6">Nenhum insumo encontrado nas receitas.</p>')
+
+    # 2. Mapeia TODOS os fornecedores elegíveis para cada item
+    all_suppliers = db.query(models.Supplier).all()
+    
     for ing_id, data in agg.items():
-        # Busca todas as entradas no catálogo para este ingrediente
+        # Busca o que já está no catálogo com preços
         catalog_entries = db.query(models.SupplierCatalog).filter_by(ingredient_id=ing_id).all()
+        cat_sup_ids = {c.supplier_id: c.last_price for c in catalog_entries}
         
-        data["alternatives"] = []
-        for entry in catalog_entries:
-            data["alternatives"].append({
-                "supplier_id": str(entry.supplier_id),
-                "supplier_name": entry.supplier.name,
-                "supplier_phone": entry.supplier.contact_info or "",
-                "price": entry.last_price or 0.0,
-                "brand": entry.manufacturer.brand_name if entry.manufacturer else "Genérica"
-            })
-        
-        # Ordena por preço e define o primeiro como padrão
-        data["alternatives"].sort(key=lambda x: x["price"])
-        if data["alternatives"]:
-            data["selected_supplier"] = data["alternatives"][0]
-        else:
-            data["selected_supplier"] = {"supplier_id": "0", "supplier_name": "Sem Fornecedor", "supplier_phone": "", "price": 0.0}
+        for sup in all_suppliers:
+            sup_cats = [c.category for c in sup.supplier_categories]
+            # Se o fornecedor já tem preço tabelado OU se atende a categoria do produto
+            if sup.id in cat_sup_ids or data["category"] in sup_cats:
+                data["alternatives"].append({
+                    "supplier_id": str(sup.id),
+                    "supplier_name": sup.name,
+                    "supplier_phone": sup.contact_info or "",
+                    "price": cat_sup_ids.get(sup.id, 0.0)
+                })
 
-    # 3. Organiza os dados para o componente Alpine.js
-    # Passamos os dados processados para um template ou geramos o HTML compatível
-    # Aqui vamos usar uma abordagem onde o Alpine.js gerencia a lista no cliente
-    return templates.TemplateResponse("fragments/shopping_list_interactive.html", {
-        "request": request,
-        "items": agg,
-        "suppliers": {s.id: s.name for s in db.query(models.Supplier).all()}
-    })
-```
+    # 3. Salva a lista de compras no Banco de Dados
+    s_list = models.ShoppingList(name=f"Cotação gerada em {datetime.utcnow().strftime('%d/%m/%Y às %H:%M')}")
+    db.add(s_list)
+    db.flush()
+    for ing_id, data in agg.items():
+        db.add(models.ShoppingListItem(list_id=s_list.id, ingredient_id=ing_id, qty=data["qty"]))
+    db.commit()
 
-### 2. Novo Fragmento Interativo (`templates/fragments/shopping_list_interactive.html`)
-Este novo fragmento usa o **Alpine.js** para permitir que o usuário mova itens entre os fornecedores em tempo real antes de enviar o WhatsApp.
-
-```html
-<div x-data="{
-    // Dados injetados do servidor
-    orderItems: {{ items | tojson | safe }},
+    # 4. Gera a interface Interativa usando Alpine.js (Sem precisar de arquivos novos)
+    items_json = json.dumps(agg)
     
-    // Agrupar itens pelo fornecedor selecionado
-    get grouped() {
-        let groups = {};
-        Object.values(this.orderItems).forEach(item => {
-            let sId = item.selected_supplier.supplier_id;
-            if (!groups[sId]) {
-                groups[sId] = {
-                    name: item.selected_supplier.supplier_name,
-                    phone: item.selected_supplier.supplier_phone,
-                    items: []
-                };
-            }
-            groups[sId].items.push(item);
-        });
-        return groups;
-    },
-
-    // Gerar link do WhatsApp dinamicamente
-    getWhatsAppLink(supplier) {
-        let text = 'Olá ' + supplier.name + '! Gostaria de fazer o seguinte pedido:\n\n';
-        supplier.items.forEach(i => {
-            text += '- ' + i.qty.toFixed(2) + ' ' + i.unit + ' de ' + i.name + '\n';
-        });
-        return 'https://wa.me/' + supplier.phone.replace(/\D/g,'') + '?text=' + encodeURIComponent(text);
-    }
-}" class="space-y-6">
-
-    <template x-for="(group, sId) in grouped" :key="sId">
-        <div class="card p-5 border-l-4" :class="sId === '0' ? 'border-red-500' : 'border-blue-500'">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="font-bold text-lg text-white" x-text="group.name"></h3>
-                <span class="text-xs text-gray-500" x-text="group.items.length + ' itens'"></span>
-            </div>
-
-            <ul class="divide-y divide-gray-800">
-                <template x-for="item in group.items" :key="item.name">
-                    <li class="py-3 flex flex-col gap-2">
-                        <div class="flex justify-between">
-                            <span class="text-sm font-medium text-gray-200" x-text="item.name"></span>
-                            <span class="font-mono text-sm text-blue-400" x-text="item.qty.toFixed(2) + ' ' + item.unit"></span>
-                        </div>
-                        
-                        <div x-show="item.alternatives.length > 1" class="flex items-center gap-2">
-                            <label class="text-[10px] text-gray-500 uppercase">Trocar fornecedor:</label>
-                            <select x-model="item.selected_supplier" class="text-xs p-1 bg-slate-900 border-slate-700 rounded">
-                                <template x-for="alt in item.alternatives" :key="alt.supplier_id">
-                                    <option :value="alt" x-text="alt.supplier_name + ' (R$ ' + alt.price.toFixed(2) + ')'"></option>
-                                </template>
-                            </select>
-                        </div>
-                    </li>
-                </template>
-            </ul>
-
-            <div x-show="sId !== '0' && group.phone" class="mt-4 pt-4 border-t border-gray-800">
-                <a :href="getWhatsAppLink(group)" target="_blank" 
-                   class="btn btn-primary btn-full bg-green-600 hover:bg-green-500 text-xs h-10">
-                    📱 Enviar Lista para <span x-text="group.name" class="ml-1"></span>
-                </a>
-            </div>
+    html = f"""
+    <div x-data="{{
+        orderItems: {items_json},
+        groups: {{}},
+        init() {{
+            let g = {{}};
+            Object.values(this.orderItems).forEach(item => {{
+                // Se nenhum fornecedor atende este item
+                if (item.alternatives.length === 0) {{
+                    if (!g['0']) g['0'] = {{ name: 'Sem Fornecedor Compatível', phone: '', items: [] }};
+                    g['0'].items.push({{ ...item, selected: true }});
+                    return;
+                }}
+                // Distribui o item para os cards de TODOS os fornecedores que podem vendê-lo
+                item.alternatives.forEach(alt => {{
+                    if (!g[alt.supplier_id]) {{
+                        g[alt.supplier_id] = {{
+                            name: alt.supplier_name,
+                            phone: alt.supplier_phone,
+                            items: []
+                        }};
+                    }}
+                    g[alt.supplier_id].items.push({{
+                        name: item.name,
+                        qty: item.qty,
+                        unit: item.unit,
+                        price: alt.price,
+                        selected: true // Começa com o checkbox marcado
+                    }});
+                }});
+            }});
+            this.groups = g;
+        }},
+        countSelected(group) {{
+            return group.items.filter(i => i.selected).length;
+        }},
+        getWhatsAppLink(group) {{
+            let text = 'Olá *' + group.name + '*! Pode me passar a cotação atualizada para os itens abaixo?\\n\\n';
+            group.items.filter(i => i.selected).forEach(i => {{
+                text += '▫️ ' + i.qty.toFixed(2) + ' ' + i.unit + ' de ' + i.name + '\\n';
+            }});
+            text += '\\nAguardo o retorno. Obrigado!';
+            let phone = group.phone ? group.phone.replace(/\\D/g,'') : '';
+            return 'https://wa.me/' + phone + '?text=' + encodeURIComponent(text);
+        }}
+    }}" class="space-y-6">
+        
+        <div class="p-4 bg-green-900/30 border border-green-700 rounded-xl text-green-400 font-semibold flex items-center gap-3">
+            <span class="text-xl">✅</span> Lista processada! Marque os itens que deseja cotar com cada fornecedor.
         </div>
-    </template>
-</div>
+
+        <template x-for="(group, sId) in groups" :key="sId">
+            <div class="card overflow-hidden border border-slate-700 shadow-md">
+                <div class="bg-slate-800 px-5 py-4 border-b border-slate-700 flex justify-between items-center">
+                    <div>
+                        <h3 class="font-bold text-lg text-white" x-text="group.name"></h3>
+                        <p class="text-xs text-slate-400" x-text="group.phone || 'Sem telefone cadastrado'"></p>
+                    </div>
+                    <span class="bg-slate-700 text-slate-300 px-3 py-1 rounded-full text-xs font-bold" x-text="countSelected(group) + ' itens selecionados'"></span>
+                </div>
+
+                <ul class="divide-y divide-slate-800 px-5">
+                    <template x-for="(item, idx) in group.items" :key="idx">
+                        <li class="py-3 flex justify-between items-center hover:bg-slate-800/30 cursor-pointer" @click="item.selected = !item.selected">
+                            <label class="flex items-center gap-3 cursor-pointer flex-1">
+                                <input type="checkbox" x-model="item.selected" class="w-5 h-5 rounded border-slate-600 bg-slate-900 text-blue-600 focus:ring-blue-500">
+                                <span class="text-sm font-medium" :class="item.selected ? 'text-slate-200' : 'text-slate-600 line-through'" x-text="item.name"></span>
+                            </label>
+                            <span class="font-mono text-sm" :class="item.selected ? 'text-blue-400' : 'text-slate-600'" x-text="item.qty.toFixed(2) + ' ' + item.unit"></span>
+                        </li>
+                    </template>
+                </ul>
+
+                <div class="px-5 py-4 bg-slate-900 border-t border-slate-800" x-show="sId !== '0'">
+                    <a :href="getWhatsAppLink(group)" target="_blank" 
+                       class="btn bg-green-600 hover:bg-green-500 text-white w-full text-sm font-bold flex justify-center items-center gap-2"
+                       :class="countSelected(group) === 0 ? 'opacity-50 pointer-events-none' : ''">
+                        📱 Enviar Cotação para <span x-text="group.name"></span>
+                    </a>
+                </div>
+            </div>
+        </template>
+    </div>
+    """
+    return HTMLResponse(html)
 ```
 
-### O que essa melhoria entrega:
-1.  **Flexibilidade Total:** Se um fornecedor estiver sem estoque, o usuário simplesmente muda o item para outro fornecedor no dropdown e o botão do WhatsApp se atualiza na hora.
-2.  **Visibilidade de Preço:** O dropdown de "Trocar Fornecedor" já mostra o preço de cada um, permitindo decidir se vale a pena pagar um pouco mais para centralizar a entrega.
-3.  **WhatsApp Inteligente:** O link não é gerado uma única vez; ele é uma função reativa do Alpine.js que recalcula o texto da mensagem toda vez que você move um item de um card para o outro.
-4.  **Organização:** Itens que não possuem nenhum fornecedor cadastrado são automaticamente isolados em um card de alerta "Sem Fornecedor".
-
-**Dica de implementação:** Certifique-se de que o telefone do fornecedor no cadastro inclua o código do país (ex: 5511999999999) para que o link do WhatsApp funcione corretamente sem precisar de edição manual.
+### 🧠 Como essa mágica funciona agora:
+1. Ao gerar a lista, o sistema exibe **vários cartões** – um para cada fornecedor que atenda a essas categorias/itens.
+2. Se você precisar comprar "Frango", e o fornecedor **A** e o **B** venderem carne, o frango vai aparecer nos dois cartões.
+3. Se você quiser testar qual o melhor preço do dia, basta **deixar marcado** no fornecedor A e no fornecedor B e clicar no botão do WhatsApp de ambos.
+4. Se você decidir: *"O frango vou cotar só com o fornecedor B porque ele entrega hoje"*, basta desmarcar o checkbox do frango no cartão do fornecedor A.
+5. O botão do WhatsApp **se reescreve automaticamente em tempo real**. Ele só manda no texto a lista dos ingredientes cujo "check" estiver marcado para aquele fornecedor!

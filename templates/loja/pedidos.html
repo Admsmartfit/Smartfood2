@@ -1,0 +1,65 @@
+{% extends "loja/base_loja.html" %}
+
+{% block title %}Meus Pedidos — SmartFood Portal{% endblock %}
+{% block nav_pedidos %}active" style="color:#16a34a;background:#f0fdf4;font-weight:600{% endblock %}
+
+{% block content %}
+<div>
+  <!-- Header -->
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1.5rem">
+    <h1 style="font-size:1.3rem;font-weight:700">Meus Pedidos</h1>
+    <a href="/loja" class="btn btn-outline" style="min-height:40px;font-size:.875rem">← Ir às Compras</a>
+  </div>
+
+  <!-- Lista de pedidos -->
+  {% if orders %}
+  <div style="display:flex;flex-direction:column;gap:.75rem">
+    {% for o in orders %}
+    {% set status_info = {
+      'PENDING':   {'label': 'Pendente',  'color': '#d97706', 'bg': '#fef3c7', 'icon': '🕐'},
+      'DELIVERED': {'label': 'Entregue',  'color': '#15803d', 'bg': '#dcfce7', 'icon': '✅'},
+      'CANCELED':  {'label': 'Cancelado', 'color': '#dc2626', 'bg': '#fee2e2', 'icon': '❌'},
+    } %}
+    {% set si = status_info.get(o.status, {'label': o.status, 'color': '#64748b', 'bg': '#f1f5f9', 'icon': '📦'}) %}
+    <div style="background:#fff;border:1px solid var(--border);border-radius:.75rem;padding:1.1rem 1.25rem">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap">
+        <div>
+          <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+            <span style="font-size:1.1rem">📦</span>
+            <span style="font-weight:700;font-size:.95rem">Pedido #{{ o.id }}</span>
+            <span style="font-size:.78rem;font-weight:600;padding:.2rem .6rem;border-radius:.3rem;
+                         color:{{ si.color }};background:{{ si.bg }}">
+              {{ si.icon }} {{ si.label }}
+            </span>
+          </div>
+          <p style="font-size:.8rem;color:var(--sub);margin-top:.3rem">
+            {{ o.order_date.strftime('%d/%m/%Y às %H:%M') }}
+          </p>
+          <p style="font-size:.83rem;color:var(--text);margin-top:.4rem">
+            {% for oi in o.items %}
+              {{ oi.recipe.nome_comercial or oi.recipe.name if oi.recipe else '?' }} ({{ oi.quantity }}x){% if not loop.last %}, {% endif %}
+            {% endfor %}
+          </p>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <p style="font-weight:700;font-size:1rem">R$ {{ "%.2f"|format(o.total_amount) }}</p>
+        </div>
+      </div>
+      {% if o.notes %}
+      <p style="font-size:.78rem;color:var(--sub);margin-top:.5rem;padding-top:.5rem;border-top:1px solid var(--border)">
+        📝 {{ o.notes }}
+      </p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  {% else %}
+  <div style="text-align:center;padding:4rem 1rem;color:var(--muted)">
+    <p style="font-size:2.5rem">📋</p>
+    <p style="margin-top:.75rem;font-size:1rem">Você ainda não tem pedidos.</p>
+    <a href="/loja" class="btn btn-primary" style="margin-top:1.25rem">Fazer Primeiro Pedido</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

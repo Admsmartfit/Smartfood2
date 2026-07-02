@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+
+{% block title %}Usuários — SmartFood{% endblock %}
+
+{% block header_title %}
+<h1 style="font-size:1rem;font-weight:600;color:var(--text)">Gestão de Usuários</h1>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .alert-success { background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d;border-radius:.5rem;padding:.65rem 1rem;font-size:.85rem;margin:.5rem 0 }
+  .alert-error   { background:#fef2f2;border:1px solid #fecaca;color:#dc2626;border-radius:.5rem;padding:.65rem 1rem;font-size:.85rem;margin:.5rem 0 }
+  .tipo-badge { display:inline-flex;align-items:center;padding:.2rem .6rem;border-radius:.3rem;font-size:.7rem;font-weight:600 }
+  .tipo-ADMIN    { background:#dbeafe;color:#1d4ed8 }
+  .tipo-PRODUCAO { background:#fef3c7;color:#92400e }
+  .tipo-CLIENTE  { background:#dcfce7;color:#15803d }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <!-- Header + botão novo -->
+  <div class="flex items-center justify-between flex-wrap gap-3">
+    <div>
+      <h2 style="font-size:1.25rem;font-weight:700;color:var(--text)">Usuários do Sistema</h2>
+      <p style="font-size:.83rem;color:var(--sub)">{{ users|length }} usuário(s) cadastrado(s)</p>
+    </div>
+    <button onclick="document.getElementById('modal-novo').showModal()"
+            class="btn btn-primary">+ Novo Usuário</button>
+  </div>
+
+  <!-- Tabela de usuários -->
+  <div class="card overflow-hidden">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Nome</th>
+          <th>E-mail</th>
+          <th>Tipo</th>
+          <th>Cliente</th>
+          <th>Status</th>
+          <th>Último Acesso</th>
+          <th style="width:160px">Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr id="user-row-{{ u.id }}">
+          <td style="font-weight:500">{{ u.nome }}</td>
+          <td style="color:var(--sub);font-size:.83rem">{{ u.email }}</td>
+          <td><span class="tipo-badge tipo-{{ u.tipo_usuario }}">{{ u.tipo_usuario }}</span></td>
+          <td style="font-size:.83rem;color:var(--sub)">
+            {% if u.cliente %}{{ u.cliente.name }}{% else %}—{% endif %}
+          </td>
+          <td>
+            {% if u.ativo %}
+              <span class="badge badge-green">Ativo</span>
+            {% else %}
+              <span class="badge badge-red">Inativo</span>
+            {% endif %}
+          </td>
+          <td style="font-size:.8rem;color:var(--sub)">
+            {{ relative_time(u.ultimo_acesso) }}
+          </td>
+          <td>
+            <div class="flex gap-1 flex-wrap">
+              <button onclick="openEdit({{ u.id }}, '{{ u.nome|replace("'","&#39;") }}', '{{ u.email }}', '{{ u.tipo_usuario }}', {{ u.cliente_id or 'null' }}, {{ u.ativo }})"
+                      class="btn btn-secondary btn-sm">✏️</button>
+              <button hx-post="/admin/usuarios/{{ u.id }}/reset-senha"
+                      hx-target="#reset-result-{{ u.id }}"
+                      hx-swap="innerHTML"
+                      class="btn btn-secondary btn-sm" title="Resetar senha">🔑</button>
+              {% if u.id != current_user_id %}
+              <button hx-delete="/admin/usuarios/{{ u.id }}"
+                      hx-target="#user-row-{{ u.id }}"
+                      hx-swap="outerHTML"
+                      hx-confirm="Desativar {{ u.nome }}?"
+                      class="btn btn-danger btn-sm" title="Desativar">🚫</button>
+              {% endif %}
+            </div>
+            <div id="reset-result-{{ u.id }}" class="mt-1"></div>
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not users %}
+        <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:2rem">
+          Nenhum usuário. Crie o primeiro com o botão acima.
+        </td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal: Novo Usuário -->
+<dialog id="modal-novo" style="border:none;border-radius:.875rem;padding:0;width:100%;max-width:480px;
+        box-shadow:0 20px 60px rgba(0,0,0,.2);background:var(--card)">
+  <form method="dialog" style="display:none"></form>
+  <div style="padding:1.5rem 1.5rem 0">
+    <div class="flex items-center justify-between mb-4">
+      <h3 style="font-size:1rem;font-weight:700">Novo Usuário</h3>
+      <button onclick="document.getElementById('modal-novo').close()" class="icon-btn">✕</button>
+    </div>
+  </div>
+  <div style="padding:0 1.5rem 1.5rem">
+    <div id="novo-resultado"></div>
+    <form hx-post="/admin/usuarios" hx-target="#novo-resultado" hx-swap="innerHTML" class="space-y-3">
+      <div>
+        <label style="font-size:.8rem;font-weight:600;color:var(--sub)">Nome completo</label>
+        <input name="nome" required placeholder="Nome completo" class="mt-1"
+               style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
+                      background:var(--surface);color:var(--text);font-family:inherit;min-height:40px"/>
+      </div>
+      <div>
+        <label style="font-size:.8rem;font-weight:600;color:var(--sub)">E-mail</label>
+        <input name="email" type="email" required placeholder="email@exemplo.com" class="mt-1"
+               style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
+                      background:var(--surface);color:var(--text);font-family:inherit;min-height:40px"/>
+      </div>
+      <div>
+        <label style="font-size:.8rem;font-weight:600;color:var(--sub)">Senha (mín. 8 caracteres)</label>
+        <input name="senha" type="password" required minlength="8" placeholder="••••••••" class="mt-1"
+               style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
+                      background:var(--surface);color:var(--text);font-family:inherit;min-height:40px"/>
+      </div>
+      <div x-data="{tipo:'CLIENTE'}">
+        <label style="font-size:.8rem;font-weight:600;color:var(--sub)">Tipo de Acesso</label>
+        <select name="tipo_usuario" x-model="tipo" class="mt-1"
+                style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
+                       background:var(--surface);color:var(--text);font-family:inherit;min-height:40px">
+          <option value="ADMIN">ADMIN — Acesso total</option>
+          <option value="PRODUCAO">PRODUCAO — ERP interno</option>
+          <option value="CLIENTE" selected>CLIENTE — Portal de compras</option>
+        </select>
+        <div x-show="tipo === 'CLIENTE'" class="mt-2">
+          <label style="font-size:.8rem;font-weight:600;color:var(--sub)">Cliente vinculado</label>
+          <select name="cliente_id" class="mt-1"
+                  style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
+                         background:var(--surface);color:var(--text);font-family:inherit;min-height:40px">
+            <option value="">— Selecione o cliente —</option>
+            {% for c in customers %}
+            <option value="{{ c.id }}">{{ c.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="flex gap-2 pt-2">
+        <button type="submit" class="btn btn-primary flex-1">Criar Usuário</button>
+        <button type="button" onclick="document.getElementById('modal-novo').close()"
+                class="btn btn-secondary">Cancelar</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<!-- Modal: Editar Usuário -->
+<dialog id="modal-edit" style="border:none;border-radius:.875rem;padding:0;width:100%;max-width:480px;
+        box-shadow:0 20px 60px rgba(0,0,0,.2);background:var(--card)">
+  <div style="padding:1.5rem 1.5rem 0">
+    <div class="flex items-center justify-between mb-4">
+      <h3 style="font-size:1rem;font-weight:700">Editar Usuário</h3>
+      <button onclick="document.getElementById('modal-edit').close()" class="icon-btn">✕</button>
+    </div>
+  </div>
+  <div style="padding:0 1.5rem 1.5rem">
+    <div id="edit-resultado"></div>
+    <form id="edit-form" hx-target="#edit-resultado" hx-swap="innerHTML" hx-ext="method-override"
+          class="space-y-3">
+      <input type="hidden" name="_method" value="PUT"/>
+      <div>
+        <label style="font-size:.8rem;font-weight:600;color:var(--sub)">Nome</label>
+        <input id="edit-nome" name="nome" required class="mt-1"
+               style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
+                      background:var(--surface);color:var(--text);font-family:inherit;min-height:40px"/>
+      </div>
+      <div>
+        <label style="font-size:.8rem;font-weight:600;color:var(--sub)">E-mail</label>
+        <input id="edit-email" name="email" type="email" required class="mt-1"
+               style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
+                      background:var(--surface);color:var(--text);font-family:inherit;min-height:40px"/>
+      </div>
+      <div x-data="{tipo:'CLIENTE'}" id="edit-tipo-wrap">
+        <label style="font-size:.8rem;font-weight:600;color:var(--sub)">Tipo</label>
+        <select id="edit-tipo" name="tipo_usuario" x-model="tipo" class="mt-1"
+                style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
+                       background:var(--surface);color:var(--text);font-family:inherit;min-height:40px">
+          <option value="ADMIN">ADMIN</option>
+          <option value="PRODUCAO">PRODUCAO</option>
+          <option value="CLIENTE">CLIENTE</option>
+        </select>
+        <div x-show="tipo === 'CLIENTE'" class="mt-2">
+          <label style="font-size:.8rem;font-weight:600;color:var(--sub)">Cliente vinculado</label>
+          <select id="edit-cliente" name="cliente_id" class="mt-1"
+                  style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
+                         background:var(--surface);color:var(--text);font-family:inherit;min-height:40px">
+            <option value="">— Selecione —</option>
+            {% for c in customers %}
+            <option value="{{ c.id }}">{{ c.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div>
+        <label style="font-size:.8rem;font-weight:600;color:var(--sub)">Status</label>
+        <select id="edit-ativo" name="ativo" class="mt-1"
+                style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
+                       background:var(--surface);color:var(--text);font-family:inherit;min-height:40px">
+          <option value="1">Ativo</option>
+          <option value="0">Inativo</option>
+        </select>
+      </div>
+      <div class="flex gap-2 pt-2">
+        <button type="submit" class="btn btn-primary flex-1">Salvar</button>
+        <button type="button" onclick="document.getElementById('modal-edit').close()"
+                class="btn btn-secondary">Cancelar</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openEdit(id, nome, email, tipo, clienteId, ativo) {
+  document.getElementById('edit-form').setAttribute('hx-put', `/admin/usuarios/${id}`);
+  htmx.process(document.getElementById('edit-form'));
+  document.getElementById('edit-nome').value = nome;
+  document.getElementById('edit-email').value = email;
+  document.getElementById('edit-tipo').value = tipo;
+  if (clienteId) document.getElementById('edit-cliente').value = clienteId;
+  document.getElementById('edit-ativo').value = ativo;
+  document.getElementById('modal-edit').showModal();
+}
+</script>
+{% endblock %}

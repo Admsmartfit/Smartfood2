@@ -267,10 +267,12 @@
 function kdsApp() {
   const allRecipes = JSON.parse(document.getElementById('kds-data').textContent);
 
+  const _preselect = new URLSearchParams(window.location.search).get('recipe_id');
+
   return {
     allRecipes,
-    selectedId:     '',
-    recipe:         null,
+    selectedId:     _preselect || '',
+    recipe:         _preselect ? (allRecipes.find(r => String(r.id) === _preselect) || null) : null,
     targetPortions: 1,
     batchNumber:    '',
     checked:        {},

@@ -1,16 +1,65 @@
 import json
+import os
 from fastapi import FastAPI, Request, Form, Depends, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import text, func
 from typing import Optional
 from datetime import datetime, timedelta
+import bcrypt as _bcrypt
 
 import models
 import label_service
 from database import SessionLocal, engine
+
+# ── Auth helpers ──────────────────────────────────────────────────────────────
+
+_SECRET_KEY = os.environ.get("SECRET_KEY", "smartfood-ops-360-dev-key-mude-em-producao!!")
+
+def hash_senha(senha: str) -> str:
+    return _bcrypt.hashpw(senha.encode(), _bcrypt.gensalt()).decode()
+
+def verificar_senha(senha: str, hash_str: str) -> bool:
+    try:
+        return _bcrypt.checkpw(senha.encode(), hash_str.encode())
+    except Exception:
+        return False
+
+
+# ── Auth middleware ───────────────────────────────────────────────────────────
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    _PUBLIC = {"/login", "/logout"}
+    _PUBLIC_PREFIX = ("/produto/", "/qr/")
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        if path in self._PUBLIC or any(path.startswith(p) for p in self._PUBLIC_PREFIX):
+            return await call_next(request)
+
+        user_id = request.session.get("user_id")
+        if not user_id:
+            if request.headers.get("HX-Request"):
+                return Response(headers={"HX-Redirect": "/login"}, status_code=200)
+            return RedirectResponse("/login", status_code=302)
+
+        tipo = request.session.get("tipo_usuario", "")
+
+        # /admin/usuarios — ADMIN only
+        if path.startswith("/admin/usuarios") and tipo != "ADMIN":
+            return HTMLResponse("Acesso negado.", status_code=403)
+
+        # CLIENTE só pode acessar /loja/*
+        if tipo == "CLIENTE" and not path.startswith("/loja"):
+            if request.headers.get("HX-Request"):
+                return Response(headers={"HX-Redirect": "/loja"}, status_code=200)
+            return RedirectResponse("/loja", status_code=302)
+
+        return await call_next(request)
 
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
@@ -26,6 +75,21 @@ _MIGRATIONS = [
     # Module 5 & 6
     "ALTER TABLE ingredients ADD COLUMN current_stock REAL DEFAULT 0.0",
     "ALTER TABLE recipes ADD COLUMN current_stock_units INTEGER DEFAULT 0",
+    # Descontos em pedidos
+    "ALTER TABLE sales_orders ADD COLUMN discount_amount REAL DEFAULT 0.0",
+
+    # v3.0 Etapa B — Portal do Cliente B2B
+    "ALTER TABLE recipes ADD COLUMN nome_comercial TEXT DEFAULT ''",
+    "ALTER TABLE recipes ADD COLUMN foto_url TEXT DEFAULT ''",
+    "ALTER TABLE recipes ADD COLUMN descricao_venda TEXT DEFAULT ''",
+    "ALTER TABLE recipes ADD COLUMN unidade_venda TEXT DEFAULT 'pacote'",
+    "ALTER TABLE recipes ADD COLUMN visivel_loja INTEGER DEFAULT 0",
+
+    # v3.0 Etapa C — Guia QR
+    "ALTER TABLE recipes ADD COLUMN fotos_apresentacao TEXT DEFAULT '[]'",
+    "ALTER TABLE recipes ADD COLUMN dicas_apresentacao TEXT DEFAULT ''",
+    "ALTER TABLE recipes ADD COLUMN nomes_cardapio TEXT DEFAULT '[]'",
+    "ALTER TABLE recipes ADD COLUMN alertas_preparo TEXT DEFAULT ''",
 ]
 with engine.connect() as _conn:
     for _sql in _MIGRATIONS:
@@ -35,7 +99,18 @@ with engine.connect() as _conn:
         except Exception:
             pass  # column already exists
 
-app = FastAPI(title="SmartFood Ops 360 Foundation")
+app = FastAPI(title="SmartFood Ops 360")
+
+# Middleware order: AuthMiddleware added first (inner), SessionMiddleware added second (outer).
+# Execution order: SessionMiddleware → AuthMiddleware → route handler.
+app.add_middleware(AuthMiddleware)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=_SECRET_KEY,
+    max_age=86400,
+    same_site="lax",
+    https_only=False,
+)
 
 # ── Category constants (used by templates and helpers) ────────────────────────
 INGREDIENT_CATEGORIES = ["Carnes", "Vegetais", "Temperos", "Laticínios", "Carboidratos", "Embalagens", "Outros"]
@@ -78,6 +153,7 @@ templates.env.globals["relative_time"] = _relative_time
 templates.env.globals["now"] = datetime.utcnow
 templates.env.globals["cat_style"] = CAT_STYLE
 templates.env.globals["ingredient_categories"] = INGREDIENT_CATEGORIES
+templates.env.filters["from_json"] = lambda s: json.loads(s) if s else []
 
 # Dependency
 def get_db():
@@ -87,9 +163,170 @@ def get_db():
     finally:
         db.close()
 
+# ── Etapa A: Autenticação ─────────────────────────────────────────────────────
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request, erro: str = ""):
+    return templates.TemplateResponse("login.html", {"request": request, "erro": erro})
+
+
+@app.post("/login", response_class=HTMLResponse)
+async def login_post(
+    request: Request,
+    email: str = Form(...),
+    senha: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    user = db.query(models.User).filter_by(email=email.strip().lower(), ativo=1).first()
+    if not user or not verificar_senha(senha, user.senha_hash):
+        return templates.TemplateResponse(
+            "login.html",
+            {"request": request, "erro": "E-mail ou senha incorretos."},
+            status_code=200,
+        )
+    user.ultimo_acesso = datetime.utcnow()
+    db.commit()
+
+    request.session["user_id"] = user.id
+    request.session["user_nome"] = user.nome
+    request.session["tipo_usuario"] = user.tipo_usuario
+    if user.cliente_id:
+        request.session["cliente_id"] = user.cliente_id
+
+    dest = "/loja" if user.tipo_usuario == "CLIENTE" else "/dashboard"
+    return RedirectResponse(dest, status_code=302)
+
+
+@app.get("/logout")
+async def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse("/login", status_code=302)
+
+
+# ── Etapa A: Gestão de Usuários (ADMIN) ──────────────────────────────────────
+
+@app.get("/admin/usuarios", response_class=HTMLResponse)
+async def admin_usuarios(request: Request, db: Session = Depends(get_db)):
+    users = db.query(models.User).order_by(models.User.nome).all()
+    customers = db.query(models.Customer).order_by(models.Customer.name).all()
+    return templates.TemplateResponse("admin/usuarios.html", {
+        "request": request,
+        "active_page": "admin_usuarios",
+        "users": users,
+        "customers": customers,
+        "current_user_id": request.session.get("user_id"),
+    })
+
+
+@app.post("/admin/usuarios", response_class=HTMLResponse)
+async def admin_criar_usuario(
+    request: Request,
+    nome: str = Form(...),
+    email: str = Form(...),
+    senha: str = Form(...),
+    tipo_usuario: str = Form(...),
+    cliente_id: Optional[int] = Form(None),
+    db: Session = Depends(get_db),
+):
+    email = email.strip().lower()
+    if len(senha) < 8:
+        return HTMLResponse(
+            '<div class="alert-error">Senha mínima: 8 caracteres.</div>', status_code=422
+        )
+    if tipo_usuario == "CLIENTE" and not cliente_id:
+        return HTMLResponse(
+            '<div class="alert-error">Selecione o cliente vinculado.</div>', status_code=422
+        )
+    if db.query(models.User).filter_by(email=email).first():
+        return HTMLResponse(
+            '<div class="alert-error">E-mail já cadastrado.</div>', status_code=422
+        )
+    user = models.User(
+        nome=nome,
+        email=email,
+        senha_hash=hash_senha(senha),
+        tipo_usuario=tipo_usuario,
+        cliente_id=cliente_id if tipo_usuario == "CLIENTE" else None,
+    )
+    db.add(user)
+    db.commit()
+    return HTMLResponse(
+        '<div class="alert-success">Usuário criado com sucesso!</div>'
+        '<script>setTimeout(()=>location.reload(),800)</script>',
+    )
+
+
+@app.put("/admin/usuarios/{user_id}", response_class=HTMLResponse)
+async def admin_editar_usuario(
+    user_id: int,
+    nome: str = Form(...),
+    email: str = Form(...),
+    tipo_usuario: str = Form(...),
+    cliente_id: Optional[int] = Form(None),
+    ativo: int = Form(1),
+    db: Session = Depends(get_db),
+):
+    user = db.query(models.User).filter_by(id=user_id).first()
+    if not user:
+        raise HTTPException(404)
+    email = email.strip().lower()
+    conflict = db.query(models.User).filter(
+        models.User.email == email, models.User.id != user_id
+    ).first()
+    if conflict:
+        return HTMLResponse('<div class="alert-error">E-mail já em uso.</div>', status_code=422)
+    user.nome = nome
+    user.email = email
+    user.tipo_usuario = tipo_usuario
+    user.cliente_id = cliente_id if tipo_usuario == "CLIENTE" else None
+    user.ativo = ativo
+    db.commit()
+    return HTMLResponse(
+        '<div class="alert-success">Salvo!</div>'
+        '<script>setTimeout(()=>location.reload(),600)</script>',
+    )
+
+
+@app.post("/admin/usuarios/{user_id}/reset-senha", response_class=HTMLResponse)
+async def admin_reset_senha(
+    user_id: int,
+    db: Session = Depends(get_db),
+):
+    user = db.query(models.User).filter_by(id=user_id).first()
+    if not user:
+        raise HTTPException(404)
+    import secrets, string
+    nova = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
+    user.senha_hash = hash_senha(nova)
+    db.commit()
+    return HTMLResponse(
+        f'<div class="alert-success">'
+        f'Nova senha gerada: <code class="font-mono font-bold">{nova}</code>'
+        f'<br><small>Copie e envie ao usuário. Não será exibida novamente.</small></div>'
+    )
+
+
+@app.delete("/admin/usuarios/{user_id}", response_class=HTMLResponse)
+async def admin_desativar_usuario(
+    request: Request,
+    user_id: int,
+    db: Session = Depends(get_db),
+):
+    if user_id == request.session.get("user_id"):
+        return HTMLResponse('<div class="alert-error">Você não pode desativar sua própria conta.</div>', status_code=422)
+    user = db.query(models.User).filter_by(id=user_id).first()
+    if not user:
+        raise HTTPException(404)
+    user.ativo = 0
+    db.commit()
+    return HTMLResponse(
+        '<div class="alert-success">Usuário desativado.</div>'
+        '<script>setTimeout(()=>location.reload(),600)</script>',
+    )
+
+
 @app.get("/")
 async def root():
-    """Redireciona para o Dashboard Operacional."""
     return RedirectResponse(url="/dashboard", status_code=302)
 
 
@@ -289,8 +526,7 @@ async def create_ingredient(
     db.add(ing)
     db.commit()
     db.refresh(ing)
-    oob = f'<option value="{ing.id}" hx-swap-oob="beforeend:.ingredient-select">{ing.name}</option>'
-    return HTMLResponse(content=_ing_row(ing) + oob, status_code=201)
+    return HTMLResponse(content=_ing_row(ing), status_code=201)
 
 
 @app.put("/ingredients/{ing_id}", response_class=HTMLResponse)
@@ -1049,7 +1285,7 @@ async def save_production_plan(request: Request, db: Session = Depends(get_db)):
 
 @app.post("/api/shopping-list")
 async def generate_shopping_list(request: Request, db: Session = Depends(get_db)):
-    """Gera lista de compras interativa com todos os fornecedores por ingrediente."""
+    """Gera cotação RFQ: um card por fornecedor compatível com checkboxes por item."""
     body = await request.json()
     agg: dict[int, dict] = {}
 
@@ -1073,7 +1309,7 @@ async def generate_shopping_list(request: Request, db: Session = Depends(get_db)
                 if ing.id not in agg:
                     agg[ing.id] = {
                         "name": ing.name, "unit": ing.unit, "qty": 0.0,
-                        "selected_supplier_id": "0",
+                        "category": ing.category or "Outros",
                         "alternatives": [],
                     }
                 agg[ing.id]["qty"] += qty_bruto
@@ -1084,33 +1320,56 @@ async def generate_shopping_list(request: Request, db: Session = Depends(get_db)
             'Nenhum insumo encontrado nas receitas selecionadas.</p>'
         )
 
-    # 2. Busca TODOS os fornecedores para cada ingrediente, ordenando pelo menor preço
-    for ing_id, data in agg.items():
-        catalog_entries = (
-            db.query(models.SupplierCatalog)
-            .filter_by(ingredient_id=ing_id)
-            .order_by(models.SupplierCatalog.last_price.asc())
-            .all()
-        )
-        for cat in catalog_entries:
-            if cat.supplier:
-                data["alternatives"].append({
-                    "supplier_id":    str(cat.supplier_id),
-                    "supplier_name":  cat.supplier.name,
-                    "supplier_phone": cat.supplier.contact_info or "",
-                    "price":          cat.last_price or 0.0,
-                    "brand":          cat.manufacturer.brand_name if cat.manufacturer else "Genérica",
-                })
-        # Pré-seleciona o mais barato (já ordenado por preço)
-        if data["alternatives"]:
-            data["selected_supplier_id"] = data["alternatives"][0]["supplier_id"]
+    # 2. Mapeia TODOS os fornecedores elegíveis: via catálogo OU via categoria
+    all_suppliers = db.query(models.Supplier).all()
 
-    # 3. Salva no banco para cruzamento com /precos
+    for ing_id, data in agg.items():
+        catalog_entries = db.query(models.SupplierCatalog).filter_by(ingredient_id=ing_id).all()
+        cat_prices = {c.supplier_id: c.last_price or 0.0 for c in catalog_entries}
+
+        for sup in all_suppliers:
+            sup_cats = [sc.category for sc in sup.supplier_categories]
+            if sup.id in cat_prices or data["category"] in sup_cats:
+                data["alternatives"].append({
+                    "supplier_id":    str(sup.id),
+                    "supplier_name":  sup.name,
+                    "supplier_phone": sup.contact_info or "",
+                    "price":          cat_prices.get(sup.id, 0.0),
+                })
+
+    # 3. Monta grupos por fornecedor (card por fornecedor)
+    groups: dict[str, dict] = {}
+    for data in agg.values():
+        if not data["alternatives"]:
+            if "0" not in groups:
+                groups["0"] = {"name": "Sem Fornecedor Compatível", "phone": "", "items": []}
+            groups["0"]["items"].append({
+                "name": data["name"], "qty": data["qty"],
+                "unit": data["unit"], "price": 0.0, "selected": True,
+            })
+        else:
+            for alt in data["alternatives"]:
+                sid = alt["supplier_id"]
+                if sid not in groups:
+                    groups[sid] = {
+                        "name":  alt["supplier_name"],
+                        "phone": alt["supplier_phone"],
+                        "items": [],
+                    }
+                groups[sid]["items"].append({
+                    "name":     data["name"],
+                    "qty":      data["qty"],
+                    "unit":     data["unit"],
+                    "price":    alt["price"],
+                    "selected": True,
+                })
+
+    # 4. Salva no banco para cruzamento com /precos
     save_banner = ""
     save_ok = False
     try:
         s_list = models.ShoppingList(
-            name=f"Lista gerada em {datetime.utcnow().strftime('%d/%m/%Y às %H:%M')}"
+            name=f"Cotação gerada em {datetime.utcnow().strftime('%d/%m/%Y às %H:%M')}"
         )
         db.add(s_list)
         db.flush()
@@ -1120,21 +1379,18 @@ async def generate_shopping_list(request: Request, db: Session = Depends(get_db)
             ))
         db.commit()
         save_banner = (
-            '✓ Lista salva — disponível em '
-            '<a href="/precos" class="underline font-medium">Cotações</a>'
-            ' para cruzamento com fornecedores.'
+            '✓ Cotação salva — disponível em '
+            '<a href="/precos" class="underline font-medium">Cotações</a>.'
         )
         save_ok = True
     except Exception as exc:
         db.rollback()
-        save_banner = f'⚠ Lista gerada mas não salva: {exc}'
-
-    # 4. Converte chaves para string (JSON serializa int keys como strings de qualquer forma)
-    items_str_keys = {str(k): v for k, v in agg.items()}
+        save_banner = f'⚠ Cotação gerada mas não salva: {exc}'
 
     return templates.TemplateResponse("fragments/shopping_list_interactive.html", {
         "request":     request,
-        "items":       items_str_keys,
+        "groups":      groups,
+        "total_items": len(agg),
         "save_banner": save_banner,
         "save_ok":     save_ok,
     })
@@ -1453,6 +1709,10 @@ async def create_batch(
     db.add(batch)
     db.flush()
 
+    # Etapa C: auto-preenche tutorial_url com URL interna se não fornecida
+    if not tutorial_url:
+        batch.tutorial_url = f"/produto/{batch.id}"
+
     # ── Auto stock-in: increment frozen product count ────────────────────────
     if recipe_id:
         recipe_obj = db.query(models.Recipe).filter_by(id=recipe_id).first()
@@ -1501,6 +1761,7 @@ async def qr_redirect(batch_id: int, db: Session = Depends(get_db)):
         batch.expiry_date,
         batch.tutorial_url,
         batch.promo_url,
+        batch_id=batch.id,
     )
     return RedirectResponse(url=url, status_code=302)
 
@@ -1813,6 +2074,7 @@ async def create_order(request: Request, db: Session = Depends(get_db)):
     customer_id = int(body.get("customer_id", 0))
     items = body.get("items", [])
     notes = body.get("notes", "")
+    discount_amount = max(0.0, float(body.get("discount_amount", 0)))
 
     if not customer_id:
         raise HTTPException(422, "Cliente obrigatório")
@@ -1823,7 +2085,7 @@ async def create_order(request: Request, db: Session = Depends(get_db)):
     if not customer:
         raise HTTPException(404, "Cliente não encontrado")
 
-    total = 0.0
+    subtotal = 0.0
     order = models.SalesOrder(
         customer_id=customer_id,
         status="PENDING",
@@ -1845,11 +2107,14 @@ async def create_order(request: Request, db: Session = Depends(get_db)):
             quantity=qty,
             unit_price=unit_price,
         ))
-        total += qty * unit_price
+        subtotal += qty * unit_price
 
-    order.total_amount = round(total, 2)
+    discount_amount = min(discount_amount, subtotal)
+    order.discount_amount = round(discount_amount, 2)
+    order.total_amount = round(max(0.0, subtotal - discount_amount), 2)
     db.commit()
     db.refresh(order)
+    _invalidar_cache()
     return JSONResponse({"id": order.id, "total": order.total_amount, "status": order.status})
 
 
@@ -1894,6 +2159,454 @@ async def delete_order(order_id: int, db: Session = Depends(get_db)):
         db.delete(order)
         db.commit()
     return JSONResponse({"ok": True})
+
+
+# ── Etapa B: Portal do Cliente B2B ───────────────────────────────────────────
+
+def _preco_para_cliente(recipe: models.Recipe, customer_id: int, db: Session) -> float:
+    pt = db.query(models.PriceTable).filter_by(
+        customer_id=customer_id, recipe_id=recipe.id
+    ).first()
+    if pt:
+        return pt.preco
+    return _recipe_sale_price(recipe, db)
+
+
+@app.get("/loja", response_class=HTMLResponse)
+async def loja_catalogo(request: Request, db: Session = Depends(get_db)):
+    cliente_id = request.session.get("cliente_id")
+    customer = db.query(models.Customer).filter_by(id=cliente_id).first() if cliente_id else None
+    recipes = db.query(models.Recipe).filter_by(visivel_loja=1).order_by(models.Recipe.nome_comercial).all()
+    config = db.query(models.CompanyConfig).first()
+    produtos = []
+    for r in recipes:
+        nome = r.nome_comercial or r.name
+        preco = _preco_para_cliente(r, cliente_id, db) if cliente_id else _recipe_sale_price(r, db)
+        produtos.append({
+            "id": r.id,
+            "nome": nome,
+            "foto_url": r.foto_url or "",
+            "descricao": r.descricao_venda or "",
+            "unidade_venda": r.unidade_venda or "pacote",
+            "rendimento": r.rendimento_unidades or 1,
+            "preco": round(preco, 2),
+            "stock": r.current_stock_units or 0,
+        })
+    return templates.TemplateResponse("loja/catalogo.html", {
+        "request": request,
+        "customer": customer,
+        "produtos": produtos,
+        "config": config,
+        "user_nome": request.session.get("user_nome", ""),
+    })
+
+
+@app.get("/loja/carrinho", response_class=HTMLResponse)
+async def loja_carrinho(request: Request, db: Session = Depends(get_db)):
+    cliente_id = request.session.get("cliente_id")
+    customer = db.query(models.Customer).filter_by(id=cliente_id).first() if cliente_id else None
+    config = db.query(models.CompanyConfig).first()
+    return templates.TemplateResponse("loja/carrinho.html", {
+        "request": request,
+        "customer": customer,
+        "config": config,
+        "user_nome": request.session.get("user_nome", ""),
+    })
+
+
+@app.get("/loja/pedidos", response_class=HTMLResponse)
+async def loja_pedidos(request: Request, db: Session = Depends(get_db)):
+    cliente_id = request.session.get("cliente_id")
+    if not cliente_id:
+        return RedirectResponse("/loja", status_code=302)
+    customer = db.query(models.Customer).filter_by(id=cliente_id).first()
+    orders = (
+        db.query(models.SalesOrder)
+        .filter_by(customer_id=cliente_id)
+        .order_by(models.SalesOrder.order_date.desc())
+        .limit(50).all()
+    )
+    return templates.TemplateResponse("loja/pedidos.html", {
+        "request": request,
+        "customer": customer,
+        "orders": orders,
+        "user_nome": request.session.get("user_nome", ""),
+    })
+
+
+@app.get("/loja/pedidos/{order_id}", response_class=HTMLResponse)
+async def loja_pedido_detalhe(request: Request, order_id: int, db: Session = Depends(get_db)):
+    cliente_id = request.session.get("cliente_id")
+    order = db.query(models.SalesOrder).filter_by(id=order_id, customer_id=cliente_id).first()
+    if not order:
+        raise HTTPException(404)
+    return templates.TemplateResponse("loja/pedidos.html", {
+        "request": request,
+        "order_detalhe": order,
+        "user_nome": request.session.get("user_nome", ""),
+    })
+
+
+@app.post("/loja/orders")
+async def loja_criar_pedido(request: Request, db: Session = Depends(get_db)):
+    cliente_id = request.session.get("cliente_id")
+    if not cliente_id:
+        raise HTTPException(403)
+    body = await request.json()
+    items = body.get("items", [])
+    notes = body.get("notes", "")
+    if not items:
+        raise HTTPException(422, "Carrinho vazio")
+    subtotal = 0.0
+    order = models.SalesOrder(customer_id=cliente_id, status="PENDING", notes=notes)
+    db.add(order)
+    db.flush()
+    for it in items:
+        recipe_id = int(it.get("recipe_id", 0))
+        qty = int(it.get("quantity", 1))
+        unit_price = float(it.get("unit_price", 0))
+        recipe = db.query(models.Recipe).filter_by(id=recipe_id).first()
+        if not recipe or qty <= 0:
+            continue
+        db.add(models.SalesOrderItem(
+            order_id=order.id, recipe_id=recipe_id, quantity=qty, unit_price=unit_price
+        ))
+        subtotal += qty * unit_price
+    order.total_amount = round(subtotal, 2)
+    db.commit()
+    db.refresh(order)
+    return JSONResponse({"id": order.id, "total": order.total_amount})
+
+
+# ── Etapa B: Painel Admin — Catálogo da Loja ─────────────────────────────────
+
+@app.get("/admin/loja", response_class=HTMLResponse)
+async def admin_loja(request: Request, db: Session = Depends(get_db)):
+    recipes = db.query(models.Recipe).order_by(models.Recipe.name).all()
+    customers = db.query(models.Customer).order_by(models.Customer.name).all()
+    config = db.query(models.CompanyConfig).first()
+    price_tables = db.query(models.PriceTable).all()
+    pt_map = {(pt.customer_id, pt.recipe_id): pt.preco for pt in price_tables}
+    return templates.TemplateResponse("admin/loja.html", {
+        "request": request,
+        "active_page": "admin_loja",
+        "recipes": recipes,
+        "customers": customers,
+        "config": config,
+        "pt_map": pt_map,
+    })
+
+
+@app.post("/admin/loja/produto/{recipe_id}", response_class=HTMLResponse)
+async def admin_loja_produto(
+    recipe_id: int,
+    nome_comercial: str = Form(""),
+    descricao_venda: str = Form(""),
+    foto_url: str = Form(""),
+    visivel_loja: int = Form(0),
+    unidade_venda: str = Form("pacote"),
+    alertas_preparo: str = Form(""),
+    dicas_apresentacao: str = Form(""),
+    nomes_cardapio_raw: str = Form(""),
+    fotos_apresentacao_raw: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    recipe = db.query(models.Recipe).filter_by(id=recipe_id).first()
+    if not recipe:
+        raise HTTPException(404)
+    recipe.nome_comercial = nome_comercial
+    recipe.descricao_venda = descricao_venda
+    recipe.foto_url = foto_url
+    recipe.visivel_loja = visivel_loja
+    recipe.unidade_venda = unidade_venda or "pacote"
+    recipe.alertas_preparo = alertas_preparo
+    recipe.dicas_apresentacao = dicas_apresentacao
+    nomes = [n.strip() for n in nomes_cardapio_raw.splitlines() if n.strip()]
+    recipe.nomes_cardapio = json.dumps(nomes, ensure_ascii=False)
+    fotos = [f.strip() for f in fotos_apresentacao_raw.splitlines() if f.strip()]
+    recipe.fotos_apresentacao = json.dumps(fotos, ensure_ascii=False)
+    db.commit()
+    return HTMLResponse(
+        '<div class="alert-success">Produto atualizado!</div>',
+        headers={"HX-Trigger": '{"showToast":{"msg":"Produto atualizado","type":"success"}}'},
+    )
+
+
+@app.post("/admin/loja/preco", response_class=HTMLResponse)
+async def admin_loja_preco(
+    customer_id: int = Form(...),
+    recipe_id: int = Form(...),
+    preco: float = Form(...),
+    db: Session = Depends(get_db),
+):
+    pt = db.query(models.PriceTable).filter_by(
+        customer_id=customer_id, recipe_id=recipe_id
+    ).first()
+    if pt:
+        pt.preco = preco
+    else:
+        db.add(models.PriceTable(customer_id=customer_id, recipe_id=recipe_id, preco=preco))
+    db.commit()
+    return HTMLResponse(
+        '<div class="alert-success">Preço salvo!</div>',
+        headers={"HX-Trigger": '{"showToast":{"msg":"Preço atualizado","type":"success"}}'},
+    )
+
+
+@app.post("/admin/loja/config", response_class=HTMLResponse)
+async def admin_loja_config(
+    whatsapp_contato: str = Form(""),
+    nome_fantasia: str = Form("SmartFood"),
+    logo_url: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    config = db.query(models.CompanyConfig).first()
+    if config:
+        config.whatsapp_contato = whatsapp_contato
+        config.nome_fantasia = nome_fantasia
+        config.logo_url = logo_url
+    else:
+        db.add(models.CompanyConfig(
+            whatsapp_contato=whatsapp_contato,
+            nome_fantasia=nome_fantasia,
+            logo_url=logo_url,
+        ))
+    db.commit()
+    return HTMLResponse(
+        '<div class="alert-success">Configurações salvas!</div>',
+        headers={"HX-Trigger": '{"showToast":{"msg":"Configurações salvas","type":"success"}}'},
+    )
+
+
+# ── Etapa C: Guia do Produto via QR Code (rota pública) ──────────────────────
+
+@app.get("/produto/{batch_id}", response_class=HTMLResponse)
+async def produto_guia(request: Request, batch_id: int, db: Session = Depends(get_db)):
+    batch = db.query(models.ProductionBatch).filter_by(id=batch_id).first()
+    if not batch:
+        return templates.TemplateResponse("public/produto_404.html", {"request": request}, status_code=404)
+
+    recipe = db.query(models.Recipe).filter_by(id=batch.recipe_id).first() if batch.recipe_id else None
+    config = db.query(models.CompanyConfig).first()
+
+    # Frescor badge
+    now = datetime.utcnow()
+    dias_restantes = (batch.expiry_date - now).days
+    if dias_restantes >= 7:
+        frescor_classe = "green"
+    elif dias_restantes >= 1:
+        frescor_classe = "yellow"
+    else:
+        frescor_classe = "red"
+
+    nome_produto = (recipe.nome_comercial if recipe and recipe.nome_comercial else None) or batch.product_name
+    fotos_ap = json.loads(recipe.fotos_apresentacao or "[]") if recipe else []
+    nomes_cardapio = json.loads(recipe.nomes_cardapio or "[]") if recipe else []
+
+    return templates.TemplateResponse("public/produto.html", {
+        "request": request,
+        "batch": batch,
+        "recipe": recipe,
+        "config": config,
+        "nome_produto": nome_produto,
+        "dias_restantes": dias_restantes,
+        "frescor_classe": frescor_classe,
+        "fotos_apresentacao": fotos_ap,
+        "nomes_cardapio": nomes_cardapio,
+    })
+
+
+# ── v4.0 Inteligência — Cache simples (5 min TTL) ────────────────────────────
+
+import time as _time
+_intelligence_cache: dict = {}
+_CACHE_TTL = 300
+
+
+def _invalidar_cache():
+    _intelligence_cache.clear()
+
+
+def _get_plano_cached(db: Session) -> list[dict]:
+    import intelligence_engine as ie
+    agora = _time.time()
+    if "plano" in _intelligence_cache:
+        dados, ts = _intelligence_cache["plano"]
+        if agora - ts < _CACHE_TTL:
+            return dados
+    plano = ie.gerar_plano_producao_semanal(db)
+    _intelligence_cache["plano"] = (plano, agora)
+    return plano
+
+
+# ── Etapa D: Painel de Inteligência de Produção ───────────────────────────────
+
+@app.get("/inteligencia", response_class=HTMLResponse)
+async def inteligencia_page(request: Request, db: Session = Depends(get_db)):
+    import intelligence_engine as ie
+    plano = _get_plano_cached(db)
+
+    criticos  = [p for p in plano if p["urgencia"] == "CRITICO"]
+    alertas   = [p for p in plano if p["urgencia"] == "ALERTA"]
+    planejar  = [p for p in plano if p["urgencia"] == "PLANEJAR"]
+    ok        = [p for p in plano if p["urgencia"] == "OK"]
+    excesso   = [p for p in plano if p["urgencia"] == "EXCESSO"]
+    sem_dem   = [p for p in plano if p["urgencia"] == "SEM_DEMANDA"]
+
+    # KPI: valor estimado de demanda semanal
+    demanda_semana_rs = sum(
+        p["media_semanal"] * _recipe_sale_price(
+            db.query(models.Recipe).filter_by(id=p["recipe_id"]).first(), db
+        )
+        for p in plano if p.get("media_semanal", 0) > 0
+        and db.query(models.Recipe).filter_by(id=p["recipe_id"]).first()
+    )
+
+    # Tendência geral: média ponderada dos crescimentos
+    vals = [p["crescimento_pct"] for p in plano if p.get("media_semanal", 0) > 0]
+    crescimento_geral = round(sum(vals) / len(vals), 1) if vals else 0.0
+
+    recipes = db.query(models.Recipe).order_by(models.Recipe.name).all()
+    return templates.TemplateResponse("inteligencia.html", {
+        "request": request,
+        "active_page": "inteligencia",
+        "criticos": criticos,
+        "alertas": alertas,
+        "planejar": planejar,
+        "ok": ok,
+        "excesso": excesso,
+        "sem_demanda": sem_dem,
+        "total_criticos": len(criticos),
+        "total_alertas": len(alertas),
+        "demanda_semana_rs": round(demanda_semana_rs, 2),
+        "crescimento_geral": crescimento_geral,
+        "recipes": recipes,
+        "atualizado_em": datetime.utcnow(),
+    })
+
+
+@app.get("/api/inteligencia/grafico/{recipe_id}", response_class=HTMLResponse)
+async def inteligencia_grafico(
+    recipe_id: int,
+    janela: int = 12,
+    db: Session = Depends(get_db),
+):
+    import intelligence_engine as ie
+    serie = ie.serie_historica_cliente(
+        customer_id=None,
+        db=db,
+        recipe_id=recipe_id,
+        granularidade="semana",
+        janela_semanas=janela,
+    )
+    svg = ie.gerar_grafico_svg(serie)
+    recipe = db.query(models.Recipe).filter_by(id=recipe_id).first()
+    media = round(sum(s["quantidade"] for s in serie) / max(len(serie), 1), 1)
+    pico  = max((s["quantidade"] for s in serie), default=0)
+    minimo = min((s["quantidade"] for s in serie), default=0)
+    return HTMLResponse(f"""
+        <div style="margin-bottom:.5rem">{svg}</div>
+        <div style="display:flex;gap:1.5rem;font-size:.78rem;color:var(--sub);flex-wrap:wrap">
+          <span>Média: <strong style="color:var(--text)">{media:.0f} un/sem</strong></span>
+          <span>Pico: <strong style="color:var(--text)">{pico:.0f}</strong></span>
+          <span>Mínimo: <strong style="color:var(--text)">{minimo:.0f}</strong></span>
+        </div>
+    """)
+
+
+# ── Etapas E + F: Portal do Cliente ──────────────────────────────────────────
+
+def _get_current_customer(request: Request, db: Session) -> models.Customer | None:
+    cliente_id = request.session.get("cliente_id")
+    if not cliente_id:
+        return None
+    return db.query(models.Customer).filter_by(id=cliente_id).first()
+
+
+@app.get("/loja/consumo", response_class=HTMLResponse)
+async def loja_consumo_page(request: Request, db: Session = Depends(get_db)):
+    import intelligence_engine as ie
+    customer = _get_current_customer(request, db)
+    if not customer:
+        return RedirectResponse("/loja", status_code=302)
+
+    serie_mensal  = ie.serie_historica_cliente(customer.id, db, granularidade="mes",    janela_semanas=52)
+    serie_semanal = ie.serie_historica_cliente(customer.id, db, granularidade="semana", janela_semanas=12)
+
+    mes_atual_qtd    = serie_mensal[-1]["quantidade"]    if serie_mensal else 0
+    mes_anterior_qtd = serie_mensal[-2]["quantidade"]    if len(serie_mensal) >= 2 else 0
+    gasto_mes        = serie_mensal[-1]["valor_total"]   if serie_mensal else 0
+    var_mensal       = round(
+        ((mes_atual_qtd - mes_anterior_qtd) / mes_anterior_qtd * 100)
+        if mes_anterior_qtd else 0, 1
+    )
+
+    produtos_raw     = ie.produtos_do_cliente(customer.id, db)
+    total_qtd        = sum(p["quantidade_total"] for p in produtos_raw)
+    produtos_detalhes = []
+    for p in produtos_raw:
+        cres = ie.calcular_taxa_crescimento(p["recipe_id"], db, customer.id)
+        sug  = ie.calcular_sugestao_pedido_cliente(p["recipe_id"], customer.id, db)
+        produtos_detalhes.append({
+            **p,
+            "participacao_pct": round(p["quantidade_total"] / total_qtd * 100) if total_qtd else 0,
+            **cres,
+            "sugestao": sug,
+        })
+
+    return templates.TemplateResponse("loja/consumo.html", {
+        "request": request,
+        "user_nome": request.session.get("user_nome", ""),
+        "customer": customer,
+        "mes_atual_qtd": mes_atual_qtd,
+        "mes_anterior_qtd": mes_anterior_qtd,
+        "variacao_mensal_pct": var_mensal,
+        "gasto_mes": gasto_mes,
+        "serie_semanal": serie_semanal,
+        "serie_mensal": serie_mensal,
+        "produtos": produtos_detalhes,
+    })
+
+
+@app.get("/api/loja/sugestoes")
+async def api_loja_sugestoes(request: Request, db: Session = Depends(get_db)):
+    import intelligence_engine as ie
+    customer = _get_current_customer(request, db)
+    if not customer:
+        raise HTTPException(403)
+    recipes = db.query(models.Recipe).filter_by(visivel_loja=1).all()
+    sugestoes = {}
+    for recipe in recipes:
+        sug = ie.calcular_sugestao_pedido_cliente(recipe.id, customer.id, db)
+        sugestoes[str(recipe.id)] = sug
+    return JSONResponse(sugestoes)
+
+
+@app.get("/api/loja/alertas")
+async def api_loja_alertas(request: Request, db: Session = Depends(get_db)):
+    import intelligence_engine as ie
+    customer = _get_current_customer(request, db)
+    if not customer:
+        raise HTTPException(403)
+    produtos = ie.produtos_do_cliente(customer.id, db)
+    alertas = []
+    for p in produtos:
+        sug = ie.calcular_sugestao_pedido_cliente(p["recipe_id"], customer.id, db)
+        media_sem = sug.get("media_semanal_pacotes", 0)
+        dias = p["dias_desde_ultimo"]
+        if media_sem > 0 and dias > 10 and dias > (7 / max(media_sem, 0.1)):
+            recipe = db.query(models.Recipe).filter_by(id=p["recipe_id"]).first()
+            if recipe and recipe.visivel_loja:
+                alertas.append({
+                    "recipe_id": p["recipe_id"],
+                    "recipe_name": p["recipe_name"],
+                    "dias_desde_ultimo": dias,
+                    "sugestao_pacotes": sug["sugestao_pacotes"],
+                    "media_semanal": media_sem,
+                })
+    # Retorna apenas o mais urgente (maior dias/media ratio)
+    alertas.sort(key=lambda x: x["dias_desde_ultimo"] / max(x["media_semanal"], 0.01), reverse=True)
+    return JSONResponse(alertas[:1])
 
 
 if __name__ == "__main__":

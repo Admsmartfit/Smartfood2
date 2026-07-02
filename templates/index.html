@@ -40,7 +40,7 @@
       <form hx-post="/ingredients"
             hx-target="#ingredients-list"
             hx-swap="afterbegin"
-            @htmx:after-request="$event.detail.successful && ($refs.ingForm.reset(), searchIng = '', toast('Ingrediente cadastrado'))"
+            @htmx:after-request="$event.detail.successful && onIngredientAdded($event.detail.xhr, $refs.ingForm)"
             x-ref="ingForm"
             class="space-y-2">
         <input type="text" name="name" x-model="searchIng" placeholder="Nome (ex: Peito de Frango)" required />
@@ -389,6 +389,23 @@ function crudApp() {
     searchIng: '',
     searchMan: '',
     searchSup: '',
+
+    onIngredientAdded(xhr, form) {
+      const nm  = form.querySelector('[name=name]').value;
+      const idM = xhr.responseText.match(/id="ing-(\d+)"/);
+      if (idM && nm) {
+        const newId = idM[1];
+        if (!window.ingredientNames) window.ingredientNames = {};
+        window.ingredientNames[newId] = nm;
+        document.querySelectorAll('select.ingredient-select').forEach(s => {
+          if (s.tomSelect) { s.tomSelect.addOption({ value: newId, text: nm }); }
+          else { const o = document.createElement('option'); o.value = newId; o.textContent = nm; s.append(o); }
+        });
+      }
+      form.reset();
+      this.searchIng = '';
+      toast('Ingrediente cadastrado');
+    },
 
     async _put(url, body) {
       return fetch(url, {

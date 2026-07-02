@@ -80,6 +80,19 @@ class Recipe(Base):
     markup_distribuicao = Column(Float, default=0.0)      # markup for distribution channel
     current_stock_units = Column(Integer, default=0)      # ready-to-sell frozen units
 
+    # v3.0 — Portal B2B (Etapa B)
+    nome_comercial   = Column(String, default="")
+    foto_url         = Column(String, default="")
+    descricao_venda  = Column(Text, default="")
+    unidade_venda    = Column(String, default="pacote")
+    visivel_loja     = Column(Integer, default=0)
+
+    # v3.0 — Guia QR (Etapa C)
+    fotos_apresentacao = Column(Text, default="[]")   # JSON array of URLs
+    dicas_apresentacao = Column(Text, default="")
+    nomes_cardapio     = Column(Text, default="[]")   # JSON array of strings
+    alertas_preparo    = Column(Text, default="")
+
     sections = relationship("RecipeSection", back_populates="recipe")
     batches = relationship("ProductionBatch", back_populates="recipe")
 
@@ -208,12 +221,13 @@ class Customer(Base):
 class SalesOrder(Base):
     __tablename__ = "sales_orders"
 
-    id           = Column(Integer, primary_key=True, index=True)
-    customer_id  = Column(Integer, ForeignKey("customers.id"), nullable=False)
-    order_date   = Column(DateTime, default=datetime.utcnow)
-    status       = Column(String, default="PENDING")  # PENDING | DELIVERED | CANCELED
-    total_amount = Column(Float, default=0.0)
-    notes        = Column(Text, default="")
+    id              = Column(Integer, primary_key=True, index=True)
+    customer_id     = Column(Integer, ForeignKey("customers.id"), nullable=False)
+    order_date      = Column(DateTime, default=datetime.utcnow)
+    status          = Column(String, default="PENDING")  # PENDING | DELIVERED | CANCELED
+    total_amount    = Column(Float, default=0.0)
+    discount_amount = Column(Float, default=0.0)
+    notes           = Column(Text, default="")
 
     customer = relationship("Customer", back_populates="orders")
     items    = relationship("SalesOrderItem", back_populates="order",
@@ -231,3 +245,45 @@ class SalesOrderItem(Base):
 
     order  = relationship("SalesOrder", back_populates="items")
     recipe = relationship("Recipe")
+
+
+# ── v3.0 — Gestão de Usuários (Etapa A) ──────────────────────────────────────
+
+class User(Base):
+    __tablename__ = "users"
+
+    id           = Column(Integer, primary_key=True, index=True)
+    nome         = Column(String, nullable=False)
+    email        = Column(String, nullable=False, unique=True, index=True)
+    senha_hash   = Column(String, nullable=False)
+    tipo_usuario = Column(String, nullable=False, default="CLIENTE")  # ADMIN | PRODUCAO | CLIENTE
+    cliente_id   = Column(Integer, ForeignKey("customers.id"), nullable=True)
+    ativo        = Column(Integer, nullable=False, default=1)
+    criado_em    = Column(DateTime, default=datetime.utcnow)
+    ultimo_acesso = Column(DateTime, nullable=True)
+
+    cliente = relationship("Customer", foreign_keys=[cliente_id])
+
+
+# ── v3.0 — Portal B2B (Etapa B) ──────────────────────────────────────────────
+
+class PriceTable(Base):
+    __tablename__ = "price_tables"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
+    recipe_id   = Column(Integer, ForeignKey("recipes.id"), nullable=False)
+    preco       = Column(Float, nullable=False)
+    criado_em   = Column(DateTime, default=datetime.utcnow)
+
+    customer = relationship("Customer")
+    recipe   = relationship("Recipe")
+
+
+class CompanyConfig(Base):
+    __tablename__ = "company_config"
+
+    id                = Column(Integer, primary_key=True, index=True)
+    whatsapp_contato  = Column(String, default="")
+    nome_fantasia     = Column(String, default="SmartFood")
+    logo_url          = Column(String, default="")

@@ -1,0 +1,264 @@
+{% extends "loja/base_loja.html" %}
+
+{% block title %}Meu Consumo — SmartFood Portal{% endblock %}
+{% block nav_consumo %}active" style="color:#16a34a;background:#f0fdf4;font-weight:600{% endblock %}
+
+{% block extra_head %}
+<style>
+  .kpi-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: .75rem; padding: 1rem 1.1rem;
+    border-left: 4px solid var(--primary);
+  }
+  .kpi-val  { font-size: 1.35rem; font-weight: 700; color: var(--text); line-height: 1.2; }
+  .kpi-lbl  { font-size: .75rem; color: var(--sub); margin-top: .15rem; }
+
+  /* Gráfico de barras HTML puro */
+  .bar-chart { display: flex; align-items: flex-end; gap: 3px; height: 120px; padding-bottom: 0; }
+  .bar-col   { display: flex; flex-direction: column; align-items: center; flex: 1; gap: 3px; }
+  .bar       {
+    width: 100%; background: var(--primary); border-radius: 3px 3px 0 0;
+    min-height: 2px; transition: height .35s ease;
+    position: relative; cursor: default;
+  }
+  .bar:hover::after {
+    content: attr(data-val);
+    position: absolute; bottom: calc(100% + 4px); left: 50%;
+    transform: translateX(-50%);
+    background: #1e293b; color: #f1f5f9;
+    padding: .2rem .45rem; border-radius: .3rem;
+    font-size: .7rem; white-space: nowrap; pointer-events: none;
+    box-shadow: 0 2px 6px rgba(0,0,0,.3);
+  }
+  .bar-lbl  { font-size: .6rem; color: var(--sub); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; }
+
+  /* Participação por produto */
+  .part-bar-track { height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden; margin: .35rem 0; }
+  .part-bar-fill  { height: 100%; border-radius: 4px; }
+  .PROD_COLORS = ["#16a34a","#2563eb","#d97706","#7c3aed","#dc2626","#0891b2"];
+
+  .alerta-card {
+    background: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #f59e0b;
+    border-radius: .65rem; padding: .85rem 1rem; margin-bottom: 1rem;
+    display: flex; align-items: flex-start; gap: .75rem;
+  }
+  .seg-ctrl { display:inline-flex;background:#f1f5f9;border:1px solid var(--border);
+              border-radius:.5rem;padding:3px;gap:2px; }
+  .seg-btn { padding:.3rem .85rem;border-radius:.375rem;font-size:.8rem;font-weight:500;
+             color:var(--sub);cursor:pointer;border:none;background:transparent;
+             transition:all .15s;white-space:nowrap;font-family:inherit; }
+  .seg-btn.active { background:white;color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.1); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div x-data="consumoApp()" x-init="init()">
+
+  <!-- Header -->
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;
+              gap:1rem;margin-bottom:1.5rem">
+    <div>
+      <h1 style="font-size:1.3rem;font-weight:700">📊 Meu Consumo</h1>
+      <p style="font-size:.83rem;color:var(--sub)">{{ customer.name if customer else '' }}</p>
+    </div>
+    <a href="/loja" class="btn btn-outline" style="font-size:.83rem;min-height:38px">← Ir às Compras</a>
+  </div>
+
+  <!-- KPI Cards -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.75rem;margin-bottom:1.5rem">
+    <div class="kpi-card" style="border-left-color:#2563eb">
+      <p class="kpi-val">{{ mes_atual_qtd|int }}</p>
+      <p class="kpi-lbl">Pacotes no mês</p>
+    </div>
+    <div class="kpi-card" style="border-left-color:var(--primary)">
+      <p class="kpi-val">R$ {{ "%.0f"|format(gasto_mes) }}</p>
+      <p class="kpi-lbl">Gasto no mês</p>
+    </div>
+    <div class="kpi-card" style="border-left-color:{% if variacao_mensal_pct > 0 %}#16a34a{% elif variacao_mensal_pct < 0 %}#dc2626{% else %}#64748b{% endif %}">
+      <p class="kpi-val" style="color:{% if variacao_mensal_pct > 0 %}#16a34a{% elif variacao_mensal_pct < 0 %}#dc2626{% else %}var(--text){% endif %}">
+        {% if variacao_mensal_pct > 0 %}↑{% elif variacao_mensal_pct < 0 %}↓{% else %}→{% endif %}
+        {{ variacao_mensal_pct|abs }}%
+      </p>
+      <p class="kpi-lbl">vs. mês anterior</p>
+    </div>
+  </div>
+
+  <!-- Gráfico de consumo -->
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:.75rem;
+              padding:1.25rem;margin-bottom:1.5rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin-bottom:1rem">
+      <h2 style="font-size:.92rem;font-weight:700">Consumo por Período</h2>
+      <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+        <div class="seg-ctrl">
+          <button class="seg-btn" :class="granularidade==='semana'&&'active'" @click="granularidade='semana'">Semanal</button>
+          <button class="seg-btn" :class="granularidade==='mes'&&'active'"   @click="granularidade='mes'">Mensal</button>
+        </div>
+        <select x-model="filtroRecipe"
+                style="padding:.3rem .7rem;border:1px solid var(--border);border-radius:.45rem;
+                       background:var(--surface);color:var(--text);font-family:inherit;font-size:.8rem;min-height:34px">
+          <option value="">Todos os produtos</option>
+          {% for p in produtos %}
+          <option value="{{ p.recipe_id }}">{{ p.recipe_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <!-- Barras HTML puro -->
+    <div x-show="serieAtual.length > 0">
+      <div class="bar-chart" style="overflow-x:auto;padding-bottom:.75rem">
+        <template x-for="item in serieAtual" :key="item.periodo">
+          <div class="bar-col">
+            <div class="bar"
+                 :style="`height: ${maxBar > 0 ? (item.quantidade / maxBar * 100) : 2}%; min-height: 2px`"
+                 :data-val="`${item.quantidade.toFixed(0)} pct`"
+                 :title="`${item.periodo_label}: ${item.quantidade.toFixed(0)}`">
+            </div>
+            <span class="bar-lbl" x-text="item.periodo_label"></span>
+          </div>
+        </template>
+      </div>
+
+      <div style="margin-top:.5rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+        <span style="font-size:.75rem;color:var(--sub)" x-text="tendenciaTexto"></span>
+      </div>
+    </div>
+
+    <div x-show="serieAtual.length === 0"
+         style="text-align:center;padding:2rem;color:var(--muted);font-size:.85rem">
+      Nenhum dado no período.
+    </div>
+  </div>
+
+  <!-- Alertas de reposição -->
+  {% for p in produtos %}
+  {% if p.dias_desde_ultimo > 10 and p.sugestao.media_semanal_pacotes > 0 %}
+  {% set ciclo_dias = (7 / [p.sugestao.media_semanal_pacotes, 0.01]|max)|int %}
+  {% if p.dias_desde_ultimo > ciclo_dias %}
+  <div class="alerta-card" x-data="{visivel:true}" x-show="visivel">
+    <span style="font-size:1.1rem;flex-shrink:0">⏰</span>
+    <div style="flex:1;min-width:0">
+      <p style="font-size:.85rem;font-weight:600">Você não pede <strong>{{ p.recipe_name }}</strong> há {{ p.dias_desde_ultimo }} dias.</p>
+      <p style="font-size:.78rem;color:#92400e;margin-top:.2rem">
+        Com base no seu histórico, você costuma pedir a cada {{ ciclo_dias }} dias.
+      </p>
+      <a href="/loja#produto-{{ p.recipe_id }}"
+         class="btn btn-primary" style="margin-top:.65rem;min-height:36px;font-size:.8rem;padding:0 .85rem">
+        Pedir agora — {{ p.sugestao.sugestao_pacotes }} pacote(s) sugerido(s) →
+      </a>
+    </div>
+    <button @click="visivel=false"
+            style="flex-shrink:0;background:none;border:none;color:#92400e;cursor:pointer;font-size:1rem">×</button>
+  </div>
+  {% endif %}
+  {% endif %}
+  {% endfor %}
+
+  <!-- Consumo por produto -->
+  {% if produtos %}
+  <div>
+    <h2 style="font-size:.92rem;font-weight:700;margin-bottom:.85rem">Consumo por Produto</h2>
+    <div style="display:flex;flex-direction:column;gap:.85rem">
+      {% set prod_colors = ["#16a34a","#2563eb","#d97706","#7c3aed","#dc2626","#0891b2"] %}
+      {% for p in produtos %}
+      {% set cor = prod_colors[loop.index0 % prod_colors|length] %}
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:.75rem;padding:1rem 1.25rem">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap">
+          <div style="flex:1;min-width:0">
+            <p style="font-weight:700;font-size:.93rem;margin-bottom:.25rem">{{ p.recipe_name }}</p>
+
+            <!-- Barra de participação -->
+            <div class="part-bar-track">
+              <div class="part-bar-fill" style="width:{{ p.participacao_pct }}%;background:{{ cor }}"></div>
+            </div>
+            <p style="font-size:.72rem;color:var(--sub);margin-bottom:.5rem">{{ p.participacao_pct }}% do consumo</p>
+
+            <div style="display:flex;gap:1.25rem;font-size:.78rem;color:var(--sub);flex-wrap:wrap">
+              <span>Média: <strong style="color:var(--text)">{{ "%.1f"|format(p.sugestao.media_semanal_pacotes) }} pct/sem</strong></span>
+              <span>
+                {% if p.variacao_semanal_pct > 10 %}
+                  <span style="color:#16a34a;font-weight:600">↑ +{{ p.variacao_semanal_pct }}%</span>
+                {% elif p.variacao_semanal_pct < -10 %}
+                  <span style="color:#dc2626;font-weight:600">↓ {{ p.variacao_semanal_pct }}%</span>
+                {% else %}
+                  <span style="color:#6b7280">→ Estável</span>
+                {% endif %}
+                vs. sem. ant.
+              </span>
+              {% if p.dias_desde_ultimo < 999 %}
+              <span>Último: há {{ p.dias_desde_ultimo }} dia(s)
+                {% if p.sugestao.ultimo_pedido_qtd %}({{ p.sugestao.ultimo_pedido_qtd }} pct){% endif %}
+              </span>
+              {% endif %}
+            </div>
+          </div>
+
+          <!-- Sugestão de pedido -->
+          {% if p.sugestao.sugestao_pacotes > 0 %}
+          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:.55rem;
+                      padding:.6rem .85rem;min-width:180px;flex-shrink:0">
+            <p style="font-size:.75rem;color:#15803d;font-weight:600;margin-bottom:.3rem">
+              💡 Próximo pedido sugerido
+            </p>
+            <p style="font-size:.9rem;font-weight:700;color:#0f172a">
+              {{ p.sugestao.sugestao_pacotes }} pacote(s)
+            </p>
+            <p style="font-size:.7rem;color:var(--sub);margin:.2rem 0 .5rem">{{ p.sugestao.mensagem }}</p>
+            <a href="/loja#produto-{{ p.recipe_id }}"
+               class="btn btn-primary" style="min-height:32px;font-size:.75rem;padding:0 .75rem;width:100%">
+              Pedir agora →
+            </a>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:3rem;background:var(--card);border:1px solid var(--border);
+              border-radius:.75rem;color:var(--muted)">
+    <p style="font-size:2rem">📊</p>
+    <p style="margin-top:.5rem">Você ainda não tem histórico de compras.</p>
+    <a href="/loja" class="btn btn-primary" style="margin-top:1rem">Fazer primeiro pedido</a>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const SERIE_SEMANAL = {{ serie_semanal | tojson }};
+const SERIE_MENSAL  = {{ serie_mensal  | tojson }};
+
+function consumoApp() {
+  return {
+    granularidade: 'semana',
+    filtroRecipe: '',
+
+    get serieAtual() {
+      const base = this.granularidade === 'mes' ? SERIE_MENSAL : SERIE_SEMANAL;
+      return base;
+    },
+    get maxBar() {
+      const vals = this.serieAtual.map(s => s.quantidade);
+      return vals.length ? Math.max(...vals) : 1;
+    },
+    get tendenciaTexto() {
+      const s = this.serieAtual;
+      if (s.length < 2) return '';
+      const ant = s[s.length - 2].quantidade;
+      const atu = s[s.length - 1].quantidade;
+      if (ant === 0) return atu > 0 ? 'Tendência: ↑ Crescendo' : 'Sem dados anteriores';
+      const pct = ((atu - ant) / ant * 100).toFixed(1);
+      if (pct > 10) return `Tendência: ↑ Crescendo — seus pedidos aumentaram ${pct}% no período`;
+      if (pct < -10) return `Tendência: ↓ Caindo — seus pedidos diminuíram ${Math.abs(pct)}% no período`;
+      return 'Tendência: → Estável';
+    },
+
+    init() {},
+  };
+}
+</script>
+{% endblock %}

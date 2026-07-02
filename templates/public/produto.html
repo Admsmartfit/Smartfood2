@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>{{ nome_produto }} — Guia do Produto</title>
+  <meta name="robots" content="noindex"/>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;700&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --border: #334155;
+      --text: #e2e8f0;
+      --sub: #94a3b8;
+      --muted: #64748b;
+      --amber: #f59e0b;
+      --red: #ef4444;
+      --green: #22c55e;
+      --yellow: #eab308;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrapper { max-width: 480px; margin: 0 auto; padding: 0 0 3rem; }
+
+    /* Hero */
+    .hero {
+      position: relative;
+      min-height: 220px;
+      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+      display: flex; flex-direction: column;
+      justify-content: flex-end;
+      padding: 1.5rem;
+      overflow: hidden;
+    }
+    .hero-bg {
+      position: absolute; inset: 0;
+      object-fit: cover; width: 100%; height: 100%;
+      opacity: .18;
+    }
+    .hero-content { position: relative; z-index: 1; }
+    .hero-brand {
+      font-size: .68rem; font-weight: 600;
+      letter-spacing: .12em; text-transform: uppercase;
+      color: var(--amber); margin-bottom: .5rem;
+    }
+    h1 {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.75rem; font-weight: 700;
+      line-height: 1.2; color: #f8fafc;
+    }
+    .freshness-badge {
+      display: inline-flex; align-items: center; gap: .4rem;
+      padding: .3rem .75rem; border-radius: 99px;
+      font-size: .75rem; font-weight: 600; margin-top: .75rem;
+    }
+    .badge-green  { background: rgba(34,197,94,.15); color: var(--green); border: 1px solid rgba(34,197,94,.3); }
+    .badge-yellow { background: rgba(234,179,8,.15);  color: var(--yellow); border: 1px solid rgba(234,179,8,.3); }
+    .badge-red    { background: rgba(239,68,68,.15);  color: var(--red);  border: 1px solid rgba(239,68,68,.3); }
+    .lote-info { font-size: .73rem; color: var(--muted); margin-top: .4rem; font-family: 'JetBrains Mono', monospace; }
+
+    /* Section cards */
+    .section-card {
+      margin: 1rem 1rem 0;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: .875rem;
+      overflow: hidden;
+    }
+    .section-header {
+      display: flex; align-items: center; gap: .6rem;
+      padding: .9rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .section-icon { font-size: 1.1rem; flex-shrink: 0; }
+    .section-title {
+      font-size: .7rem; font-weight: 700;
+      letter-spacing: .1em; text-transform: uppercase;
+      color: var(--amber);
+    }
+    .section-body { padding: 1.1rem 1.25rem; }
+
+    /* Preparo: temperatura em destaque */
+    .temp-display {
+      background: linear-gradient(135deg, rgba(239,68,68,.12), rgba(239,68,68,.05));
+      border: 1px solid rgba(239,68,68,.25);
+      border-radius: .65rem;
+      padding: 1rem 1.25rem;
+      margin: .75rem 0;
+      display: flex; align-items: center; gap: 1rem;
+    }
+    .temp-number {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 2rem; font-weight: 700; color: var(--red);
+      flex-shrink: 0;
+    }
+    .temp-label { font-size: .8rem; color: var(--sub); line-height: 1.5; }
+
+    .instrucoes-text {
+      font-size: .875rem; color: var(--text);
+      line-height: 1.7; white-space: pre-wrap;
+    }
+    .alerta-preparo {
+      background: rgba(234,179,8,.08);
+      border: 1px solid rgba(234,179,8,.2);
+      border-radius: .5rem; padding: .65rem 1rem;
+      font-size: .8rem; color: #fcd34d;
+      margin-top: .75rem;
+      display: flex; gap: .5rem; align-items: flex-start;
+    }
+
+    /* Galeria */
+    .foto-gallery {
+      display: flex; gap: .75rem;
+      overflow-x: auto; padding: .25rem 0 .5rem;
+      scrollbar-width: none;
+    }
+    .foto-gallery::-webkit-scrollbar { display: none; }
+    .foto-thumb {
+      width: 140px; height: 105px; flex-shrink: 0;
+      border-radius: .6rem; object-fit: cover;
+      background: var(--border);
+    }
+
+    /* Nomes para cardápio */
+    .nome-item {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: .75rem; padding: .75rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .nome-item:last-child { border-bottom: none; }
+    .nome-text { font-size: .9rem; font-weight: 500; line-height: 1.4; }
+    .copy-btn {
+      flex-shrink: 0; padding: .3rem .75rem;
+      background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.3);
+      border-radius: .375rem; color: var(--amber); font-size: .72rem;
+      font-weight: 600; cursor: pointer; transition: background .15s;
+      font-family: inherit; white-space: nowrap;
+    }
+    .copy-btn:hover { background: rgba(245,158,11,.22); }
+    .copy-btn.copied { background: rgba(34,197,94,.15); border-color: rgba(34,197,94,.3); color: var(--green); }
+
+    /* Rastreabilidade */
+    .trace-row {
+      display: flex; align-items: flex-start;
+      justify-content: space-between; gap: 1rem;
+      padding: .6rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: .83rem;
+    }
+    .trace-row:last-child { border-bottom: none; }
+    .trace-label { color: var(--muted); flex-shrink: 0; min-width: 120px; }
+    .trace-value { color: var(--text); text-align: right; font-family: 'JetBrains Mono', monospace; font-size: .78rem; }
+
+    /* Footer */
+    .product-footer {
+      margin: 1.5rem 1rem 0;
+      padding: 1rem 1.25rem;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: .875rem;
+      text-align: center;
+    }
+    .footer-brand { font-size: .78rem; color: var(--muted); }
+    .footer-brand strong { color: var(--sub); }
+
+    /* Fade-in animation */
+    .fade-in { opacity: 0; transform: translateY(12px); transition: opacity .4s ease, transform .4s ease; }
+    .fade-in.visible { opacity: 1; transform: none; }
+
+    [x-cloak] { display: none !important; }
+  </style>
+</head>
+<body>
+
+<div class="wrapper">
+
+  <!-- ══ HERO — Identificação do Produto ══════════════════════════ -->
+  <div class="hero">
+    {% if recipe and recipe.foto_url %}
+    <img src="{{ recipe.foto_url }}" alt="{{ nome_produto }}" class="hero-bg" loading="eager"/>
+    {% endif %}
+    <div class="hero-content">
+      <p class="hero-brand">{{ config.nome_fantasia if config else 'SmartFood' }}</p>
+      <h1>{{ nome_produto }}</h1>
+
+      <div class="freshness-badge badge-{{ frescor_classe }}">
+        {% if frescor_classe == 'green' %}
+          ✓ Fresco · válido por {{ dias_restantes }} dias
+        {% elif frescor_classe == 'yellow' %}
+          ⚠ Vence em {{ dias_restantes }} dia(s)
+        {% else %}
+          ✕ Vencido
+        {% endif %}
+      </div>
+
+      <p class="lote-info">
+        Lote {{ batch.batch_number }} · Válido até {{ batch.expiry_date.strftime('%d/%m/%Y') }}
+      </p>
+    </div>
+  </div>
+
+  <!-- ══ MODO DE PREPARO ══════════════════════════════════════════ -->
+  {% if recipe and recipe.sections %}
+  {% for sec in recipe.sections %}
+  {% if sec.instrucoes %}
+  <div class="section-card fade-in">
+    <div class="section-header">
+      <span class="section-icon">🔥</span>
+      <span class="section-title">Modo de Preparo{% if recipe.sections|length > 1 %} — {{ sec.name }}{% endif %}</span>
+    </div>
+    <div class="section-body">
+      <p class="instrucoes-text">{{ sec.instrucoes }}</p>
+    </div>
+  </div>
+  {% endif %}
+  {% endfor %}
+  {% endif %}
+
+  {% if recipe and recipe.alertas_preparo %}
+  <div style="margin:0 1rem">
+    <div class="alerta-preparo">
+      <span>⚠️</span>
+      <span>{{ recipe.alertas_preparo }}</span>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ══ COMO SERVIR ══════════════════════════════════════════════ -->
+  {% if recipe and (fotos_apresentacao or recipe.dicas_apresentacao) %}
+  <div class="section-card fade-in">
+    <div class="section-header">
+      <span class="section-icon">🍽️</span>
+      <span class="section-title">Como Servir</span>
+    </div>
+    <div class="section-body">
+      {% if fotos_apresentacao %}
+      <div class="foto-gallery">
+        {% for foto in fotos_apresentacao %}
+        <img src="{{ foto }}" alt="Apresentação" class="foto-thumb" loading="lazy"/>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if recipe.dicas_apresentacao %}
+      <p style="font-size:.875rem;color:var(--text);line-height:1.7;margin-top:.75rem;white-space:pre-wrap">{{ recipe.dicas_apresentacao }}</p>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ══ NOMES PARA CARDÁPIO ═══════════════════════════════════════ -->
+  {% if nomes_cardapio %}
+  <div class="section-card fade-in" x-data="{}">
+    <div class="section-header">
+      <span class="section-icon">📝</span>
+      <span class="section-title">Nomes para seu Cardápio</span>
+    </div>
+    <div class="section-body">
+      {% for nome in nomes_cardapio %}
+      <div class="nome-item">
+        <span class="nome-text">{{ nome }}</span>
+        <button class="copy-btn"
+                @click="
+                  navigator.clipboard.writeText('{{ nome|replace("'", "\'") }}');
+                  $el.textContent='✓ Copiado!';
+                  $el.classList.add('copied');
+                  setTimeout(()=>{ $el.textContent='[COPIAR]'; $el.classList.remove('copied'); }, 2000)
+                ">
+          [COPIAR]
+        </button>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ══ RASTREABILIDADE ═══════════════════════════════════════════ -->
+  <div class="section-card fade-in">
+    <div class="section-header">
+      <span class="section-icon">🔎</span>
+      <span class="section-title">Rastreabilidade</span>
+    </div>
+    <div class="section-body">
+      <div class="trace-row">
+        <span class="trace-label">Lote</span>
+        <span class="trace-value">{{ batch.batch_number }}</span>
+      </div>
+      <div class="trace-row">
+        <span class="trace-label">Produzido em</span>
+        <span class="trace-value">{{ batch.production_date.strftime('%d/%m/%Y') }}</span>
+      </div>
+      <div class="trace-row">
+        <span class="trace-label">Validade</span>
+        <span class="trace-value">{{ batch.expiry_date.strftime('%d/%m/%Y') }}</span>
+      </div>
+      {% if batch.weight_kg %}
+      <div class="trace-row">
+        <span class="trace-label">Peso</span>
+        <span class="trace-value">{{ "%.3f"|format(batch.weight_kg) }} kg</span>
+      </div>
+      {% endif %}
+      {% if batch.ingredients_summary %}
+      <div class="trace-row">
+        <span class="trace-label">Ingredientes</span>
+        <span class="trace-value" style="font-family:inherit;text-align:right">{{ batch.ingredients_summary }}</span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="product-footer fade-in">
+    <p class="footer-brand">
+      Fabricado por <strong>{{ config.nome_fantasia if config else 'SmartFood' }}</strong><br>
+      <span style="font-size:.7rem;font-family:'JetBrains Mono',monospace">{{ batch.batch_number }}</span>
+    </p>
+  </div>
+
+</div><!-- /wrapper -->
+
+<script>
+// Intersection Observer para fade-in nas seções
+const observer = new IntersectionObserver(
+  entries => entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); observer.unobserve(e.target); } }),
+  { threshold: 0.1 }
+);
+document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+</script>
+
+</body>
+</html>

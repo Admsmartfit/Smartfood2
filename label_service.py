@@ -271,19 +271,22 @@ def generate_preview_html(template_data: dict, print_data: dict) -> str:
 
 # ── QR redirect logic ─────────────────────────────────────────────────────────
 
-def resolve_qr_url(expiry_date: datetime, tutorial_url: str, promo_url: str) -> str:
-    """
-    Return the URL that a QR code scan should redirect to.
+def resolve_qr_url(
+    expiry_date: datetime,
+    tutorial_url: str,
+    promo_url: str,
+    batch_id: int | None = None,
+) -> str:
+    """Return the URL that a QR code scan should redirect to.
 
-    Logic:
-      • If expiry_date is within PROMO_DAYS_BEFORE_EXPIRY days (or already past):
-          → return promo_url  (e.g. a discount/clearance page)
-      • Otherwise:
-          → return tutorial_url  (e.g. a recipe/preparation video)
-
-    Falls back to tutorial_url if either URL is empty.
+    Within PROMO_DAYS_BEFORE_EXPIRY days of expiry → promo_url.
+    Otherwise → tutorial_url. Falls back to /produto/{batch_id} if no tutorial_url.
     """
     now = datetime.utcnow()
     cutoff = expiry_date - timedelta(days=PROMO_DAYS_BEFORE_EXPIRY)
     use_promo = (now >= cutoff) and bool(promo_url)
-    return promo_url if use_promo else (tutorial_url or "/")
+    if use_promo:
+        return promo_url
+    if not tutorial_url and batch_id:
+        return f"/produto/{batch_id}"
+    return tutorial_url or "/"

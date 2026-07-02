@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>{% block title %}SmartFood — Portal de Compras{% endblock %}</title>
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #1e293b;
+      --sub: #64748b;
+      --muted: #94a3b8;
+      --primary: #16a34a;
+      --primary-h: #15803d;
+      --blue: #1e40af;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; -webkit-font-smoothing: antialiased; }
+    h1,h2,h3 { font-family: 'Outfit', sans-serif; }
+
+    /* Topbar */
+    .loja-topbar {
+      background: #fff;
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 50;
+      height: 56px;
+      display: flex; align-items: center;
+      padding: 0 1.5rem; gap: 1rem;
+    }
+    .loja-logo {
+      display:flex; align-items:center; gap:.6rem; text-decoration:none;
+    }
+    .loja-logo .sf-mark {
+      width:32px;height:32px;background:var(--primary);border-radius:.45rem;
+      display:flex;align-items:center;justify-content:center;
+      font-weight:800;font-size:.75rem;color:white;flex-shrink:0;
+    }
+
+    /* Bottom cart bar */
+    .cart-bar {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: var(--primary);
+      color: white;
+      padding: .85rem 1.5rem;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 1rem;
+      box-shadow: 0 -4px 20px rgba(0,0,0,.15);
+      z-index: 100;
+    }
+
+    /* Inputs & buttons */
+    .btn { display:inline-flex;align-items:center;justify-content:center;min-height:44px;border-radius:.5rem;font-weight:600;padding:0 1.25rem;cursor:pointer;border:none;gap:.4rem;font-size:.875rem;font-family:inherit;transition:all .12s;white-space:nowrap; }
+    .btn-primary { background:var(--primary);color:#fff; }
+    .btn-primary:hover { background:var(--primary-h); }
+    .btn-outline { background:transparent;color:var(--primary);border:2px solid var(--primary); }
+    .btn-outline:hover { background:#f0fdf4; }
+    .btn-full { width:100%; }
+
+    /* Cards de produto */
+    .produto-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: .75rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,.07);
+      overflow: hidden;
+      display: flex; flex-direction: column;
+    }
+    .produto-foto {
+      width:100%; aspect-ratio:4/3; object-fit:cover; background:#f1f5f9;
+      display:flex; align-items:center; justify-content:center;
+      font-size:3rem; color:var(--muted);
+    }
+    .produto-foto img { width:100%; height:100%; object-fit:cover; }
+
+    /* Qty stepper */
+    .qty-stepper { display:flex; align-items:center; gap:.5rem; }
+    .qty-btn {
+      width:36px;height:36px;border-radius:.4rem;border:1px solid var(--border);
+      background:#f8fafc;cursor:pointer;font-size:1.1rem;font-weight:700;
+      display:flex;align-items:center;justify-content:center;transition:background .1s;
+      font-family:inherit;
+    }
+    .qty-btn:hover { background:#e2e8f0; }
+    .qty-display { width:40px;text-align:center;font-weight:700;font-size:.95rem; }
+
+    /* Alert classes usadas por HTMX responses */
+    .alert-success { background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d;border-radius:.5rem;padding:.65rem 1rem;font-size:.85rem;margin:.5rem 0 }
+    .alert-error   { background:#fef2f2;border:1px solid #fecaca;color:#dc2626;border-radius:.5rem;padding:.65rem 1rem;font-size:.85rem;margin:.5rem 0 }
+
+    [x-cloak] { display:none !important; }
+  </style>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+  <!-- Topbar -->
+  <header class="loja-topbar">
+    <a href="/loja" class="loja-logo">
+      <div class="sf-mark">SF</div>
+      <span style="font-family:'Outfit',sans-serif;font-weight:700;font-size:.95rem;color:var(--text)">SmartFood</span>
+    </a>
+    <nav style="display:flex;gap:.25rem;flex:1">
+      <a href="/loja" style="font-size:.83rem;font-weight:500;color:var(--sub);text-decoration:none;
+         padding:.3rem .7rem;border-radius:.4rem;transition:color .1s,background .1s"
+         class="{% block nav_catalogo %}{% endblock %}">Catálogo</a>
+      <a href="/loja/pedidos" style="font-size:.83rem;font-weight:500;color:var(--sub);text-decoration:none;
+         padding:.3rem .7rem;border-radius:.4rem;transition:color .1s,background .1s"
+         class="{% block nav_pedidos %}{% endblock %}">Meus Pedidos</a>
+      <a href="/loja/consumo" style="font-size:.83rem;font-weight:500;color:var(--sub);text-decoration:none;
+         padding:.3rem .7rem;border-radius:.4rem;transition:color .1s,background .1s"
+         class="{% block nav_consumo %}{% endblock %}">📊 Consumo</a>
+    </nav>
+    <div style="display:flex;align-items:center;gap:.75rem;flex-shrink:0">
+      <span style="font-size:.78rem;color:var(--muted)">{{ user_nome }}</span>
+      <a href="/logout" style="font-size:.8rem;color:var(--sub);text-decoration:none;
+         padding:.3rem .65rem;border:1px solid var(--border);border-radius:.4rem;background:var(--bg)"
+         title="Sair">Sair 🚪</a>
+    </div>
+  </header>
+
+  <main style="padding:1.5rem;max-width:1100px;margin:0 auto;min-height:calc(100vh - 56px - 70px)">
+    {% block content %}{% endblock %}
+  </main>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

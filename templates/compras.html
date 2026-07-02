@@ -291,39 +291,25 @@ function comprasApp() {
   };
 }
 
-// Alpine component for the interactive shopping list (injected via HTMX/innerHTML)
+// Alpine component for the RFQ shopping list (injected via innerHTML + Alpine.initTree)
 function shoppingListApp() {
   const dataEl = document.getElementById('shopping-list-json');
-  const orderItems = dataEl ? JSON.parse(dataEl.textContent) : {};
+  const groups = dataEl ? JSON.parse(dataEl.textContent) : {};
   return {
-    orderItems,
+    groups,
 
-    get grouped() {
-      const groups = {};
-      for (const item of Object.values(this.orderItems)) {
-        const sid = item.selected_supplier_id;
-        const alt = item.alternatives.find(a => a.supplier_id == sid);
-        if (!groups[sid]) {
-          groups[sid] = {
-            name:  alt ? alt.supplier_name  : 'Sem Fornecedor',
-            phone: alt ? alt.supplier_phone : '',
-            items: [],
-            total: 0,
-          };
-        }
-        groups[sid].items.push(item);
-        groups[sid].total += (alt ? alt.price : 0) * item.qty;
-      }
-      return groups;
+    countSelected(group) {
+      return group.items.filter(i => i.selected).length;
     },
 
     getWhatsAppLink(group) {
-      let text = `Olá ${group.name}! Gostaria de fazer o seguinte pedido:\n\n`;
-      for (const item of group.items) {
-        text += `- ${item.qty.toFixed(3)} ${item.unit} de ${item.name}\n`;
-      }
-      text += '\nAguardo confirmação. Obrigado!';
-      return 'https://wa.me/' + group.phone.replace(/\D/g, '') + '?text=' + encodeURIComponent(text);
+      let text = `Olá *${group.name}*! Pode me passar a cotação para os itens abaixo?\n\n`;
+      group.items.filter(i => i.selected).forEach(i => {
+        text += `▫️ ${i.qty.toFixed(3)} ${i.unit} de ${i.name}\n`;
+      });
+      text += '\nAguardo o retorno. Obrigado!';
+      const phone = group.phone.replace(/\D/g, '');
+      return 'https://wa.me/' + phone + '?text=' + encodeURIComponent(text);
     },
   };
 }

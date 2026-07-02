@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+
+{% block title %}Catálogo da Loja — SmartFood{% endblock %}
+
+{% block header_title %}
+<h1 style="font-size:1rem;font-weight:600;color:var(--text)">Configurar Catálogo da Loja</h1>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .alert-success { background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d;border-radius:.5rem;padding:.65rem 1rem;font-size:.85rem;margin:.5rem 0 }
+  .alert-error   { background:#fef2f2;border:1px solid #fecaca;color:#dc2626;border-radius:.5rem;padding:.65rem 1rem;font-size:.85rem;margin:.5rem 0 }
+  .produto-item { background:var(--card);border:1px solid var(--border);border-radius:.75rem;padding:1.25rem }
+  .tab-btn { padding:.45rem 1rem;border-radius:.4rem;font-size:.82rem;font-weight:500;border:none;cursor:pointer;background:transparent;color:var(--sub);font-family:inherit;transition:all .15s }
+  .tab-btn.active { background:#eff6ff;color:#2563eb;font-weight:600 }
+  .field-label { font-size:.78rem;font-weight:600;color:var(--sub);display:block;margin-bottom:.3rem }
+  .field-input { width:100%;padding:.5rem .7rem;border:1px solid var(--border);border-radius:.45rem;
+                 background:var(--surface);color:var(--text);font-family:inherit;font-size:.875rem;
+                 min-height:38px;transition:border-color .15s }
+  .field-input:focus { border-color:var(--accent);outline:none;box-shadow:0 0 0 3px rgba(37,99,235,.12) }
+</style>
+{% endblock %}
+
+{% block content %}
+<div x-data="{activeTab:'catalogo'}" class="space-y-5">
+
+  <!-- Abas -->
+  <div style="display:flex;gap:.25rem;background:#f1f5f9;border:1px solid var(--border);
+              border-radius:.5rem;padding:3px;width:fit-content">
+    <button class="tab-btn" :class="activeTab==='catalogo'&&'active'" @click="activeTab='catalogo'">
+      🛒 Catálogo Loja
+    </button>
+    <button class="tab-btn" :class="activeTab==='qr'&&'active'" @click="activeTab='qr'">
+      📱 Guia QR Code
+    </button>
+    <button class="tab-btn" :class="activeTab==='config'&&'active'" @click="activeTab='config'">
+      ⚙️ Configurações
+    </button>
+  </div>
+
+  <!-- ─── Aba: Catálogo Loja ──────────────────────────────── -->
+  <div x-show="activeTab==='catalogo'" class="space-y-4">
+    <p style="font-size:.85rem;color:var(--sub)">
+      Marque os produtos que devem aparecer no portal B2B, defina nome comercial e preços.
+    </p>
+
+    {% for r in recipes %}
+    <div class="produto-item">
+      <form hx-post="/admin/loja/produto/{{ r.id }}" hx-target="#result-{{ r.id }}" hx-swap="innerHTML">
+        <div style="display:flex;align-items:flex-start;gap:1rem;flex-wrap:wrap">
+
+          <!-- Toggle visível -->
+          <div style="display:flex;align-items:center;gap:.5rem;min-width:160px;margin-top:.15rem">
+            <input type="checkbox" name="visivel_loja" value="1" id="vis-{{ r.id }}"
+                   {% if r.visivel_loja %}checked{% endif %}
+                   style="width:18px;height:18px;accent-color:var(--accent);cursor:pointer"/>
+            <label for="vis-{{ r.id }}" style="font-weight:700;cursor:pointer;font-size:.9rem">
+              {{ r.name }}
+            </label>
+          </div>
+
+          <!-- Campos inline -->
+          <div style="flex:1;display:grid;grid-template-columns:1fr 1fr;gap:.65rem;min-width:240px">
+            <div>
+              <label class="field-label">Nome Comercial</label>
+              <input name="nome_comercial" class="field-input"
+                     value="{{ r.nome_comercial or '' }}" placeholder="Ex: Coxinha Artesanal"/>
+            </div>
+            <div>
+              <label class="field-label">Unidade de Venda</label>
+              <input name="unidade_venda" class="field-input"
+                     value="{{ r.unidade_venda or 'pacote' }}" placeholder="pacote"/>
+            </div>
+            <div style="grid-column:1/-1">
+              <label class="field-label">URL da Foto</label>
+              <input name="foto_url" class="field-input" type="url"
+                     value="{{ r.foto_url or '' }}" placeholder="https://..."/>
+            </div>
+            <div style="grid-column:1/-1">
+              <label class="field-label">Descrição de Venda</label>
+              <input name="descricao_venda" class="field-input"
+                     value="{{ r.descricao_venda or '' }}" placeholder="Breve descrição para o cliente"/>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-sm" style="align-self:flex-end">💾 Salvar</button>
+        </div>
+        <div id="result-{{ r.id }}" class="mt-2"></div>
+      </form>
+
+      <!-- Preços por cliente -->
+      <details style="margin-top:1rem">
+        <summary style="font-size:.8rem;font-weight:600;color:var(--sub);cursor:pointer;
+                        padding:.4rem .5rem;border-radius:.4rem;background:#f8fafc;
+                        border:1px solid var(--border)">
+          💰 Preços por Cliente ({{ customers|length }})
+        </summary>
+        <div style="margin-top:.65rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.5rem">
+          {% for c in customers %}
+          <form hx-post="/admin/loja/preco" hx-target="#preco-result-{{ r.id }}-{{ c.id }}" hx-swap="innerHTML"
+                style="display:flex;align-items:center;gap:.4rem">
+            <input type="hidden" name="customer_id" value="{{ c.id }}"/>
+            <input type="hidden" name="recipe_id" value="{{ r.id }}"/>
+            <label style="font-size:.78rem;min-width:110px;flex:1;color:var(--text)">{{ c.name }}</label>
+            <span style="font-size:.8rem;color:var(--sub)">R$</span>
+            <input name="preco" type="number" step="0.01" min="0"
+                   value="{{ "%.2f"|format(pt_map.get((c.id, r.id), 0.0)) }}"
+                   style="width:80px;text-align:right;padding:.3rem .5rem;border:1px solid var(--border);
+                          border-radius:.4rem;font-family:'JetBrains Mono',monospace;font-size:.82rem;
+                          background:var(--surface);color:var(--text);min-height:32px"/>
+            <button type="submit" class="btn btn-secondary btn-sm" style="min-height:32px;padding:0 .5rem">✓</button>
+            <div id="preco-result-{{ r.id }}-{{ c.id }}"></div>
+          </form>
+          {% endfor %}
+        </div>
+      </details>
+    </div>
+    {% endfor %}
+
+    {% if not recipes %}
+    <div style="text-align:center;padding:3rem;color:var(--muted)">
+      Nenhuma ficha técnica cadastrada. Crie receitas em <a href="/ficha-tecnica" style="color:var(--accent)">Fichas Técnicas</a>.
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ─── Aba: Guia QR Code ──────────────────────────────── -->
+  <div x-show="activeTab==='qr'" x-cloak class="space-y-4">
+    <p style="font-size:.85rem;color:var(--sub)">
+      Configure as informações que aparecem no Guia do Produto quando o cliente escaneia o QR Code da embalagem.
+    </p>
+
+    {% for r in recipes %}
+    <div class="produto-item">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1rem">
+        <h3 style="font-weight:700;font-size:.95rem">{{ r.nome_comercial or r.name }}</h3>
+        {% set ultimo_batch = r.batches[-1] if r.batches else none %}
+        {% if ultimo_batch %}
+        <a href="/produto/{{ ultimo_batch.id }}?preview=1" target="_blank"
+           class="btn btn-secondary btn-sm">👁 Prévia do Guia ↗</a>
+        {% endif %}
+      </div>
+      <form hx-post="/admin/loja/produto/{{ r.id }}" hx-target="#qr-result-{{ r.id }}" hx-swap="innerHTML">
+        <input type="hidden" name="nome_comercial" value="{{ r.nome_comercial or '' }}"/>
+        <input type="hidden" name="descricao_venda" value="{{ r.descricao_venda or '' }}"/>
+        <input type="hidden" name="foto_url" value="{{ r.foto_url or '' }}"/>
+        <input type="hidden" name="visivel_loja" value="{{ r.visivel_loja }}"/>
+        <input type="hidden" name="unidade_venda" value="{{ r.unidade_venda or 'pacote' }}"/>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+          <div style="grid-column:1/-1">
+            <label class="field-label">Alerta de Preparo</label>
+            <input name="alertas_preparo" class="field-input"
+                   value="{{ r.alertas_preparo or '' }}"
+                   placeholder="Ex: Não descongele antes de fritar. Frite direto."/>
+          </div>
+          <div style="grid-column:1/-1">
+            <label class="field-label">Dicas de Apresentação</label>
+            <textarea name="dicas_apresentacao" rows="3" class="field-input" style="resize:vertical"
+                      placeholder="Ex: Sirva em tábua de madeira com geleia de pimenta…">{{ r.dicas_apresentacao or '' }}</textarea>
+          </div>
+          <div>
+            <label class="field-label">Fotos de Apresentação (URLs, uma por linha)</label>
+            <textarea name="fotos_apresentacao_raw" rows="3" class="field-input" style="resize:vertical"
+                      placeholder="https://foto1.jpg&#10;https://foto2.jpg">{% for f in r.fotos_apresentacao|from_json %}{{ f }}
+{% endfor %}</textarea>
+          </div>
+          <div>
+            <label class="field-label">Nomes para Cardápio (um por linha)</label>
+            <textarea name="nomes_cardapio_raw" rows="3" class="field-input" style="resize:vertical"
+                      placeholder="Coxinha Artesanal de Frango&#10;Coxinha da Casa">{% for n in r.nomes_cardapio|from_json %}{{ n }}
+{% endfor %}</textarea>
+          </div>
+        </div>
+        <div class="flex gap-2 mt-3">
+          <button type="submit" class="btn btn-primary btn-sm">💾 Salvar</button>
+        </div>
+        <div id="qr-result-{{ r.id }}" class="mt-2"></div>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- ─── Aba: Configurações ──────────────────────────────── -->
+  <div x-show="activeTab==='config'" x-cloak>
+    <div class="produto-item" style="max-width:480px">
+      <h3 style="font-weight:700;margin-bottom:1rem">Configurações da Empresa</h3>
+      <form hx-post="/admin/loja/config" hx-target="#config-result" hx-swap="innerHTML" class="space-y-3">
+        <div>
+          <label class="field-label">Nome Fantasia</label>
+          <input name="nome_fantasia" class="field-input"
+                 value="{{ config.nome_fantasia if config else 'SmartFood' }}"/>
+        </div>
+        <div>
+          <label class="field-label">WhatsApp de Contato (somente números)</label>
+          <input name="whatsapp_contato" class="field-input" type="tel"
+                 value="{{ config.whatsapp_contato if config else '' }}"
+                 placeholder="5511999999999"/>
+        </div>
+        <div>
+          <label class="field-label">URL do Logo</label>
+          <input name="logo_url" class="field-input" type="url"
+                 value="{{ config.logo_url if config else '' }}" placeholder="https://..."/>
+        </div>
+        <button type="submit" class="btn btn-primary">💾 Salvar Configurações</button>
+      </form>
+      <div id="config-result" class="mt-2"></div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Registra filtro from_json no Jinja — não é necessário aqui, apenas garantia de template válido
+</script>
+{% endblock %}

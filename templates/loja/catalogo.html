@@ -1,0 +1,213 @@
+{% extends "loja/base_loja.html" %}
+
+{% block title %}Catálogo — SmartFood Portal{% endblock %}
+{% block nav_catalogo %}active" style="color:#16a34a;background:#f0fdf4;font-weight:600{% endblock %}
+
+{% block content %}
+<div x-data="lojaApp()" x-init="init()">
+
+  <!-- Saudação -->
+  <div style="margin-bottom:1.25rem">
+    <h1 style="font-size:1.4rem;font-weight:700;color:#0f172a">
+      Olá, {{ customer.name if customer else user_nome }}! 👋
+    </h1>
+    <p style="color:var(--sub);font-size:.9rem;margin-top:.2rem">Faça seu pedido de reposição abaixo.</p>
+  </div>
+
+  <!-- Banner de alerta de reposição (Etapa F) -->
+  <div x-show="alerta && !alertaDismissed" x-cloak x-transition
+       style="background:#fffbeb;border:1px solid #fde68a;border-left:4px solid #f59e0b;
+              border-radius:.65rem;padding:.85rem 1rem;margin-bottom:1.25rem;
+              display:flex;align-items:flex-start;gap:.75rem">
+    <span style="font-size:1rem;flex-shrink:0">🔔</span>
+    <div style="flex:1;min-width:0">
+      <p style="font-size:.85rem;font-weight:600;color:#92400e" x-text="alerta ? `Com base no seu histórico, você costuma pedir ${alerta.recipe_name} regularmente. Seu último pedido foi há ${alerta.dias_desde_ultimo} dia(s). Está no carrinho?` : ''"></p>
+      <button @click="addCartFromAlert(alerta)"
+              class="btn btn-primary"
+              style="margin-top:.5rem;min-height:36px;font-size:.8rem;padding:0 .85rem"
+              x-text="alerta ? `Adicionar ${alerta.sugestao_pacotes} pacote(s) →` : ''">
+      </button>
+    </div>
+    <button @click="alertaDismissed=true"
+            style="flex-shrink:0;background:none;border:none;color:#92400e;cursor:pointer;font-size:1.1rem;line-height:1">×</button>
+  </div>
+
+  <!-- Busca -->
+  <div style="margin-bottom:1.5rem;max-width:400px">
+    <input x-model="busca" type="search" placeholder="🔍 Buscar produto…"
+           style="width:100%;padding:.55rem 1rem;border:1px solid var(--border);
+                  border-radius:.5rem;background:#fff;color:var(--text);
+                  font-family:inherit;font-size:.875rem;min-height:44px"/>
+  </div>
+
+  <!-- Grid de produtos -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:1rem;margin-bottom:5rem">
+    {% for p in produtos %}
+    <div class="produto-card"
+         x-show="!busca || '{{ p.nome|lower }}'.includes(busca.toLowerCase())">
+
+      <!-- Foto -->
+      <div class="produto-foto">
+        {% if p.foto_url %}
+        <img src="{{ p.foto_url }}" alt="{{ p.nome }}" loading="lazy"/>
+        {% else %}
+        🍽️
+        {% endif %}
+      </div>
+
+      <!-- Info -->
+      <div style="padding:.85rem;flex:1;display:flex;flex-direction:column;gap:.5rem">
+        <div>
+          <p style="font-weight:700;font-size:.95rem;line-height:1.3">{{ p.nome }}</p>
+          {% if p.descricao %}
+          <p style="font-size:.78rem;color:var(--sub);margin-top:.2rem;line-height:1.4">{{ p.descricao }}</p>
+          {% endif %}
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.25rem">
+          <span style="font-size:.78rem;color:var(--sub)">{{ p.unidade_venda }} · {{ p.rendimento }} un.</span>
+          {% if p.stock > 0 %}
+          <span style="font-size:.68rem;font-weight:600;background:#dcfce7;color:#15803d;
+                       padding:.15rem .5rem;border-radius:.3rem">Em Estoque</span>
+          {% else %}
+          <span style="font-size:.68rem;font-weight:600;background:#fee2e2;color:#dc2626;
+                       padding:.15rem .5rem;border-radius:.3rem">Indisponível</span>
+          {% endif %}
+        </div>
+
+        <p style="font-size:1.1rem;font-weight:700;color:#0f172a">R$ {{ "%.2f"|format(p.preco) }}</p>
+
+        <!-- Sugestão inteligente (Etapa F) -->
+        <template x-if="getSugestao({{ p.id }})">
+          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:.4rem;
+                      padding:.4rem .65rem;font-size:.75rem;color:#15803d;margin-bottom:.25rem">
+            <span x-text="getSugestaoLabel({{ p.id }})"></span>
+          </div>
+        </template>
+
+        <!-- Stepper com quantidade pré-preenchida pela sugestão -->
+        <div x-data="{qty: 0}"
+             x-init="qty = getSugestaoQty({{ p.id }})"
+             style="display:flex;align-items:center;gap:.5rem;margin-top:.25rem">
+          <div class="qty-stepper">
+            <button class="qty-btn" @click="qty=Math.max(0,qty-1)">−</button>
+            <span class="qty-display" x-text="qty"></span>
+            <button class="qty-btn"
+                    @click="qty = ({{ p.stock }} > 0 && qty >= {{ p.stock }}) ? qty : qty+1"
+                    :disabled="{{ p.stock }}===0 || ({{ p.stock }} > 0 && qty >= {{ p.stock }})">+</button>
+          </div>
+          <button @click="addCart({{ p.id }}, '{{ p.nome|replace("'","&#39;") }}', {{ p.preco }}, {{ p.rendimento }}, '{{ p.unidade_venda }}', qty); qty=0"
+                  :disabled="qty===0"
+                  class="btn btn-primary"
+                  style="min-height:36px;padding:0 .75rem;font-size:.8rem;flex:1"
+                  :class="qty===0 ? 'opacity-40 cursor-not-allowed' : ''">
+            🛒 Adicionar
+          </button>
+        </div>
+
+        <!-- Limite de estoque -->
+        <template x-if="{{ p.stock }} > 0 && {{ p.stock }} <= 5">
+          <p style="font-size:.72rem;color:#d97706">⚠ Apenas {{ p.stock }} {{ p.unidade_venda }}(s) disponível(is)</p>
+        </template>
+      </div>
+    </div>
+    {% endfor %}
+
+    {% if not produtos %}
+    <div style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--muted)">
+      <p style="font-size:2rem">🛍️</p>
+      <p style="margin-top:.5rem">Nenhum produto disponível no momento.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Barra do carrinho (fixa no bottom) -->
+  <div x-show="cartCount > 0" x-cloak class="cart-bar" x-transition>
+    <div>
+      <p style="font-weight:700;font-size:1rem">🛒 Carrinho: <span x-text="cartCount"></span> ite(ns)</p>
+      <p style="font-size:.82rem;opacity:.85">Total: R$ <span x-text="cartTotal.toFixed(2)"></span></p>
+    </div>
+    <a href="/loja/carrinho" class="btn" style="background:white;color:var(--primary);min-height:44px;font-size:.875rem">
+      Revisar e Confirmar →
+    </a>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PRODUTOS_DATA = {{ produtos | tojson }};
+
+function lojaApp() {
+  return {
+    busca: '',
+    cart: JSON.parse(localStorage.getItem('sf_cart') || '[]'),
+    sugestoes: {},   // { recipe_id: {sugestao_pacotes, confianca, mensagem, ...} }
+    alerta: null,
+    alertaDismissed: false,
+
+    get cartCount() { return this.cart.reduce((s,i)=>s+i.qty,0); },
+    get cartTotal() { return this.cart.reduce((s,i)=>s+i.qty*i.preco,0); },
+
+    async init() {
+      // Carrega sugestões e alertas em paralelo (não bloqueia a renderização)
+      Promise.all([
+        fetch('/api/loja/sugestoes').then(r => r.ok ? r.json() : {}),
+        fetch('/api/loja/alertas').then(r => r.ok ? r.json() : []),
+      ]).then(([sugs, alertas]) => {
+        this.sugestoes = sugs;
+        this.alerta = alertas && alertas.length ? alertas[0] : null;
+      }).catch(() => {});
+    },
+
+    getSugestao(id) {
+      const s = this.sugestoes[String(id)];
+      return s && s.sugestao_pacotes > 0 ? s : null;
+    },
+    getSugestaoQty(id) {
+      const s = this.getSugestao(id);
+      return s ? s.sugestao_pacotes : 0;
+    },
+    getSugestaoLabel(id) {
+      const s = this.getSugestao(id);
+      if (!s) return '';
+      const icon = s.confianca === 'ALTA' ? '💡' : '•';
+      return `${icon} Sugestão: ${s.sugestao_pacotes} pct · média ${s.media_semanal_pacotes.toFixed(1)}/sem`;
+    },
+
+    addCart(id, nome, preco, rendimento, unidade, qty) {
+      if (qty <= 0) return;
+      const existing = this.cart.find(i => i.id === id);
+      if (existing) {
+        existing.qty += qty;
+      } else {
+        this.cart.push({id, nome, preco, rendimento, unidade, qty});
+      }
+      localStorage.setItem('sf_cart', JSON.stringify(this.cart));
+      window.dispatchEvent(new CustomEvent('show-toast', {detail:{msg:`${qty}x ${nome} adicionado`,type:'success'}}));
+    },
+
+    addCartFromAlert(alerta) {
+      if (!alerta) return;
+      const p = PRODUTOS_DATA.find(x => x.id === alerta.recipe_id);
+      if (p) {
+        this.addCart(p.id, p.nome, p.preco, p.rendimento, p.unidade_venda, alerta.sugestao_pacotes);
+      }
+      this.alertaDismissed = true;
+    },
+  };
+}
+</script>
+
+<!-- Toast simples para a loja -->
+<div x-data="{toasts:[]}" @show-toast.window="const t={id:Date.now(),...$event.detail};toasts.push(t);setTimeout(()=>{toasts=toasts.filter(x=>x.id!==t.id)},3000)"
+     style="position:fixed;bottom:80px;right:1rem;z-index:200;display:flex;flex-direction:column-reverse;gap:.5rem;max-width:280px">
+  <template x-for="t in toasts" :key="t.id">
+    <div x-show="true" x-transition
+         style="background:white;border:1px solid #bbf7d0;border-radius:.6rem;padding:.65rem 1rem;
+                font-size:.83rem;font-weight:500;color:#15803d;box-shadow:0 4px 12px rgba(0,0,0,.1)"
+         x-text="t.msg"></div>
+  </template>
+</div>
+{% endblock %}
