@@ -136,8 +136,9 @@
 {% endblock %}
 
 {% block scripts %}
+<script type="application/json" id="produtos-data">{{ produtos | tojson }}</script>
 <script>
-const PRODUTOS_DATA = {{ produtos | tojson }};
+const PRODUTOS_DATA = JSON.parse(document.getElementById('produtos-data').textContent);
 
 function lojaApp() {
   return {
