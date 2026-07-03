@@ -4,6 +4,9 @@
 
 set -e
 
+INSTALL_DIR="/opt/smartfood"
+APP_USER="smartfood"
+
 echo "======================================================"
 echo "  SmartFood Ops 360 — Instalador Linux"
 echo "======================================================"
@@ -22,42 +25,76 @@ apt-get install -y python3 python3-venv python3-pip git curl
 
 # ── 3. Cria usuário e diretório ────────────────────────────
 echo ""
-echo "[2/6] Criando usuário 'smartfood'..."
-if ! id "smartfood" &>/dev/null; then
-    useradd -r -s /bin/bash -d /opt/smartfood smartfood
-    echo "     Usuário 'smartfood' criado."
+echo "[2/6] Criando usuário '${APP_USER}'..."
+if ! id "$APP_USER" &>/dev/null; then
+    useradd -r -s /bin/bash -d "$INSTALL_DIR" "$APP_USER"
+    echo "     Usuário '${APP_USER}' criado."
 else
-    echo "     Usuário 'smartfood' já existe."
+    echo "     Usuário '${APP_USER}' já existe."
 fi
 
 # ── 4. Copia arquivos do projeto ───────────────────────────
 echo ""
-echo "[3/6] Copiando arquivos do projeto para /opt/smartfood ..."
-mkdir -p /opt/smartfood
-# Se estiver rodando do diretório do projeto, copia tudo para /opt/smartfood
-cp -r ./* /opt/smartfood/ 2>/dev/null || true
-chown -R smartfood:smartfood /opt/smartfood
+echo "[3/6] Copiando arquivos do projeto para ${INSTALL_DIR} ..."
+mkdir -p "$INSTALL_DIR"
+
+# Copia tudo EXCETO venv (para não carregar venv do Windows ou versão antiga)
+SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+rsync -a --exclude='venv/' --exclude='__pycache__/' --exclude='*.pyc' \
+    "${SOURCE_DIR}/" "${INSTALL_DIR}/"
+
+chown -R "${APP_USER}:${APP_USER}" "$INSTALL_DIR"
 
 # ── 5. Cria ambiente virtual e instala pacotes ─────────────
 echo ""
 echo "[4/6] Criando ambiente virtual Python..."
-cd /opt/smartfood
-sudo -u smartfood python3 -m venv venv
-sudo -u smartfood venv/bin/pip install -q --upgrade pip
-sudo -u smartfood venv/bin/pip install -r requirements.txt
 
-# Cria banco e usuário admin
+# Remove venv antigo/corrompido se existir
+rm -rf "${INSTALL_DIR}/venv"
+
+# Cria venv com caminho absoluto
+sudo -u "$APP_USER" python3 -m venv "${INSTALL_DIR}/venv"
+
+# Usa caminhos absolutos para evitar problemas de permissão
+VENV_PIP="${INSTALL_DIR}/venv/bin/pip"
+VENV_PY="${INSTALL_DIR}/venv/bin/python3"
+
+sudo -u "$APP_USER" "$VENV_PIP" install -q --upgrade pip
+sudo -u "$APP_USER" "$VENV_PIP" install -q -r "${INSTALL_DIR}/requirements.txt"
+
 echo "     Inicializando banco de dados..."
-sudo -u smartfood venv/bin/python3 seed_admin.py
+sudo -u "$APP_USER" "$VENV_PY" "${INSTALL_DIR}/seed_admin.py"
 
 # ── 6. Configura systemd ───────────────────────────────────
 echo ""
 echo "[5/6] Configurando serviço systemd..."
-cp smartfood.service /etc/systemd/system/smartfood.service
 
-# Gera chave secreta aleatória
+# Gera o arquivo de serviço com caminhos absolutos já preenchidos
 SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
-sed -i "s|MUDE-ESTA-CHAVE-SECRETA-ANTES-DE-USAR|$SECRET|g" /etc/systemd/system/smartfood.service
+
+cat > /etc/systemd/system/smartfood.service << EOF
+[Unit]
+Description=SmartFood Ops 360
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=${APP_USER}
+Group=${APP_USER}
+WorkingDirectory=${INSTALL_DIR}
+ExecStart=${INSTALL_DIR}/venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=smartfood
+Environment="SECRET_KEY=${SECRET}"
+Environment="PYTHONUNBUFFERED=1"
+
+[Install]
+WantedBy=multi-user.target
+EOF
 
 systemctl daemon-reload
 systemctl enable smartfood
@@ -69,7 +106,6 @@ echo "[6/6] Verificando status do serviço..."
 sleep 2
 systemctl status smartfood --no-pager || true
 
-# ── Descobre IP local ──────────────────────────────────────
 LOCAL_IP=$(hostname -I | awk '{print $1}')
 
 echo ""
@@ -80,13 +116,13 @@ echo ""
 echo "  Acesse em qualquer dispositivo da rede local:"
 echo "  --> http://${LOCAL_IP}:8000"
 echo ""
-echo "  Login padrão:"
+echo "  Login padrao:"
 echo "  Email : admin@smartfood.com"
 echo "  Senha : smartfood2026"
 echo ""
-echo "  IMPORTANTE: Troque a senha do admin após o primeiro login!"
+echo "  IMPORTANTE: Troque a senha do admin apos o primeiro login!"
 echo ""
-echo "  Comandos úteis:"
+echo "  Comandos uteis:"
 echo "  Ver logs    : sudo journalctl -u smartfood -f"
 echo "  Reiniciar   : sudo systemctl restart smartfood"
 echo "  Parar       : sudo systemctl stop smartfood"
