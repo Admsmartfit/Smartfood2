@@ -8,12 +8,49 @@
 
 {% block extra_head %}
 <style>
-  .alert-success { background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d;border-radius:.5rem;padding:.65rem 1rem;font-size:.85rem;margin:.5rem 0 }
-  .alert-error   { background:#fef2f2;border:1px solid #fecaca;color:#dc2626;border-radius:.5rem;padding:.65rem 1rem;font-size:.85rem;margin:.5rem 0 }
-  .tipo-badge { display:inline-flex;align-items:center;padding:.2rem .6rem;border-radius:.3rem;font-size:.7rem;font-weight:600 }
-  .tipo-ADMIN    { background:#dbeafe;color:#1d4ed8 }
-  .tipo-PRODUCAO { background:#fef3c7;color:#92400e }
-  .tipo-CLIENTE  { background:#dcfce7;color:#15803d }
+  .alert-success {
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    color: #15803d;
+    border-radius: .5rem;
+    padding: .65rem 1rem;
+    font-size: .85rem;
+    margin: .5rem 0
+  }
+
+  .alert-error {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #dc2626;
+    border-radius: .5rem;
+    padding: .65rem 1rem;
+    font-size: .85rem;
+    margin: .5rem 0
+  }
+
+  .tipo-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: .2rem .6rem;
+    border-radius: .3rem;
+    font-size: .7rem;
+    font-weight: 600
+  }
+
+  .tipo-ADMIN {
+    background: #dbeafe;
+    color: #1d4ed8
+  }
+
+  .tipo-PRODUCAO {
+    background: #fef3c7;
+    color: #92400e
+  }
+
+  .tipo-CLIENTE {
+    background: #dcfce7;
+    color: #15803d
+  }
 </style>
 {% endblock %}
 
@@ -26,8 +63,7 @@
       <h2 style="font-size:1.25rem;font-weight:700;color:var(--text)">Usuários do Sistema</h2>
       <p style="font-size:.83rem;color:var(--sub)">{{ users|length }} usuário(s) cadastrado(s)</p>
     </div>
-    <button onclick="document.getElementById('modal-novo').showModal()"
-            class="btn btn-primary">+ Novo Usuário</button>
+    <button onclick="document.getElementById('modal-novo').showModal()" class="btn btn-primary">+ Novo Usuário</button>
   </div>
 
   <!-- Tabela de usuários -->
@@ -55,9 +91,9 @@
           </td>
           <td>
             {% if u.ativo %}
-              <span class="badge badge-green">Ativo</span>
+            <span class="badge badge-green">Ativo</span>
             {% else %}
-              <span class="badge badge-red">Inativo</span>
+            <span class="badge badge-red">Inativo</span>
             {% endif %}
           </td>
           <td style="font-size:.8rem;color:var(--sub)">
@@ -65,18 +101,18 @@
           </td>
           <td>
             <div class="flex gap-1 flex-wrap">
-              <button onclick="openEdit({{ u.id }}, '{{ u.nome|replace("'","&#39;") }}', '{{ u.email }}', '{{ u.tipo_usuario }}', {{ u.cliente_id or 'null' }}, {{ u.ativo }})"
-                      class="btn btn-secondary btn-sm">✏️</button>
-              <button hx-post="/admin/usuarios/{{ u.id }}/reset-senha"
-                      hx-target="#reset-result-{{ u.id }}"
-                      hx-swap="innerHTML"
-                      class="btn btn-secondary btn-sm" title="Resetar senha">🔑</button>
+              <button onclick="openEdit({{ u.id }}, '{{ u.nome|replace("'","&#39;") }}' , '{{ u.email }}'
+                , '{{ u.tipo_usuario }}' , {{ u.cliente_id or 'null' }}, {{ u.ativo }})"
+                class="btn btn-secondary btn-sm">✏️</button>
+              <button hx-post="/admin/usuarios/{{ u.id }}/reset-senha" hx-target="#reset-result-{{ u.id }}"
+                hx-swap="innerHTML" class="btn btn-secondary btn-sm" title="Resetar senha">🔑</button>
               {% if u.id != current_user_id %}
-              <button hx-delete="/admin/usuarios/{{ u.id }}"
-                      hx-target="#user-row-{{ u.id }}"
-                      hx-swap="outerHTML"
-                      hx-confirm="Desativar {{ u.nome }}?"
-                      class="btn btn-danger btn-sm" title="Desativar">🚫</button>
+              <button hx-delete="/admin/usuarios/{{ u.id }}" hx-target="#user-row-{{ u.id }}" hx-swap="outerHTML"
+                hx-confirm="{% if u.ativo %}Desativar{% else %}Excluir permanentemente{% endif %} {{ u.nome }}?"
+                class="btn btn-danger btn-sm"
+                title="{% if u.ativo %}Desativar{% else %}Excluir permanentemente{% endif %}">
+                {% if u.ativo %}🚫{% else %}🗑️{% endif %}
+              </button>
               {% endif %}
             </div>
             <div id="reset-result-{{ u.id }}" class="mt-1"></div>
@@ -84,9 +120,11 @@
         </tr>
         {% endfor %}
         {% if not users %}
-        <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:2rem">
-          Nenhum usuário. Crie o primeiro com o botão acima.
-        </td></tr>
+        <tr>
+          <td colspan="7" style="text-align:center;color:var(--muted);padding:2rem">
+            Nenhum usuário. Crie o primeiro com o botão acima.
+          </td>
+        </tr>
         {% endif %}
       </tbody>
     </table>
@@ -108,26 +146,22 @@
     <form hx-post="/admin/usuarios" hx-target="#novo-resultado" hx-swap="innerHTML" class="space-y-3">
       <div>
         <label style="font-size:.8rem;font-weight:600;color:var(--sub)">Nome completo</label>
-        <input name="nome" required placeholder="Nome completo" class="mt-1"
-               style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
-                      background:var(--surface);color:var(--text);font-family:inherit;min-height:40px"/>
+        <input name="nome" required placeholder="Nome completo" class="mt-1" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
+                      background:var(--surface);color:var(--text);font-family:inherit;min-height:40px" />
       </div>
       <div>
         <label style="font-size:.8rem;font-weight:600;color:var(--sub)">E-mail</label>
-        <input name="email" type="email" required placeholder="email@exemplo.com" class="mt-1"
-               style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
-                      background:var(--surface);color:var(--text);font-family:inherit;min-height:40px"/>
+        <input name="email" type="email" required placeholder="email@exemplo.com" class="mt-1" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
+                      background:var(--surface);color:var(--text);font-family:inherit;min-height:40px" />
       </div>
       <div>
         <label style="font-size:.8rem;font-weight:600;color:var(--sub)">Senha (mín. 8 caracteres)</label>
-        <input name="senha" type="password" required minlength="8" placeholder="••••••••" class="mt-1"
-               style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
-                      background:var(--surface);color:var(--text);font-family:inherit;min-height:40px"/>
+        <input name="senha" type="password" required minlength="8" placeholder="••••••••" class="mt-1" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
+                      background:var(--surface);color:var(--text);font-family:inherit;min-height:40px" />
       </div>
       <div x-data="{tipo:'CLIENTE'}">
         <label style="font-size:.8rem;font-weight:600;color:var(--sub)">Tipo de Acesso</label>
-        <select name="tipo_usuario" x-model="tipo" class="mt-1"
-                style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
+        <select name="tipo_usuario" x-model="tipo" class="mt-1" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
                        background:var(--surface);color:var(--text);font-family:inherit;min-height:40px">
           <option value="ADMIN">ADMIN — Acesso total</option>
           <option value="PRODUCAO">PRODUCAO — ERP interno</option>
@@ -135,8 +169,7 @@
         </select>
         <div x-show="tipo === 'CLIENTE'" class="mt-2">
           <label style="font-size:.8rem;font-weight:600;color:var(--sub)">Cliente vinculado</label>
-          <select name="cliente_id" class="mt-1"
-                  style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
+          <select name="cliente_id" class="mt-1" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
                          background:var(--surface);color:var(--text);font-family:inherit;min-height:40px">
             <option value="">— Selecione o cliente —</option>
             {% for c in customers %}
@@ -148,7 +181,7 @@
       <div class="flex gap-2 pt-2">
         <button type="submit" class="btn btn-primary flex-1">Criar Usuário</button>
         <button type="button" onclick="document.getElementById('modal-novo').close()"
-                class="btn btn-secondary">Cancelar</button>
+          class="btn btn-secondary">Cancelar</button>
       </div>
     </form>
   </div>
@@ -165,25 +198,21 @@
   </div>
   <div style="padding:0 1.5rem 1.5rem">
     <div id="edit-resultado"></div>
-    <form id="edit-form" hx-target="#edit-resultado" hx-swap="innerHTML" hx-ext="method-override"
-          class="space-y-3">
-      <input type="hidden" name="_method" value="PUT"/>
+    <form id="edit-form" hx-target="#edit-resultado" hx-swap="innerHTML" hx-ext="method-override" class="space-y-3">
+      <input type="hidden" name="_method" value="PUT" />
       <div>
         <label style="font-size:.8rem;font-weight:600;color:var(--sub)">Nome</label>
-        <input id="edit-nome" name="nome" required class="mt-1"
-               style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
-                      background:var(--surface);color:var(--text);font-family:inherit;min-height:40px"/>
+        <input id="edit-nome" name="nome" required class="mt-1" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
+                      background:var(--surface);color:var(--text);font-family:inherit;min-height:40px" />
       </div>
       <div>
         <label style="font-size:.8rem;font-weight:600;color:var(--sub)">E-mail</label>
-        <input id="edit-email" name="email" type="email" required class="mt-1"
-               style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
-                      background:var(--surface);color:var(--text);font-family:inherit;min-height:40px"/>
+        <input id="edit-email" name="email" type="email" required class="mt-1" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
+                      background:var(--surface);color:var(--text);font-family:inherit;min-height:40px" />
       </div>
       <div x-data="{tipo:'CLIENTE'}" id="edit-tipo-wrap">
         <label style="font-size:.8rem;font-weight:600;color:var(--sub)">Tipo</label>
-        <select id="edit-tipo" name="tipo_usuario" x-model="tipo" class="mt-1"
-                style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
+        <select id="edit-tipo" name="tipo_usuario" x-model="tipo" class="mt-1" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
                        background:var(--surface);color:var(--text);font-family:inherit;min-height:40px">
           <option value="ADMIN">ADMIN</option>
           <option value="PRODUCAO">PRODUCAO</option>
@@ -191,8 +220,7 @@
         </select>
         <div x-show="tipo === 'CLIENTE'" class="mt-2">
           <label style="font-size:.8rem;font-weight:600;color:var(--sub)">Cliente vinculado</label>
-          <select id="edit-cliente" name="cliente_id" class="mt-1"
-                  style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
+          <select id="edit-cliente" name="cliente_id" class="mt-1" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
                          background:var(--surface);color:var(--text);font-family:inherit;min-height:40px">
             <option value="">— Selecione —</option>
             {% for c in customers %}
@@ -203,8 +231,7 @@
       </div>
       <div>
         <label style="font-size:.8rem;font-weight:600;color:var(--sub)">Status</label>
-        <select id="edit-ativo" name="ativo" class="mt-1"
-                style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
+        <select id="edit-ativo" name="ativo" class="mt-1" style="width:100%;padding:.5rem .75rem;border:1px solid var(--border);border-radius:.5rem;
                        background:var(--surface);color:var(--text);font-family:inherit;min-height:40px">
           <option value="1">Ativo</option>
           <option value="0">Inativo</option>
@@ -213,7 +240,7 @@
       <div class="flex gap-2 pt-2">
         <button type="submit" class="btn btn-primary flex-1">Salvar</button>
         <button type="button" onclick="document.getElementById('modal-edit').close()"
-                class="btn btn-secondary">Cancelar</button>
+          class="btn btn-secondary">Cancelar</button>
       </div>
     </form>
   </div>
@@ -222,15 +249,15 @@
 
 {% block scripts %}
 <script>
-function openEdit(id, nome, email, tipo, clienteId, ativo) {
-  document.getElementById('edit-form').setAttribute('hx-put', `/admin/usuarios/${id}`);
-  htmx.process(document.getElementById('edit-form'));
-  document.getElementById('edit-nome').value = nome;
-  document.getElementById('edit-email').value = email;
-  document.getElementById('edit-tipo').value = tipo;
-  if (clienteId) document.getElementById('edit-cliente').value = clienteId;
-  document.getElementById('edit-ativo').value = ativo;
-  document.getElementById('modal-edit').showModal();
-}
+  function openEdit(id, nome, email, tipo, clienteId, ativo) {
+    document.getElementById('edit-form').setAttribute('hx-put', `/admin/usuarios/${id}`);
+    htmx.process(document.getElementById('edit-form'));
+    document.getElementById('edit-nome').value = nome;
+    document.getElementById('edit-email').value = email;
+    document.getElementById('edit-tipo').value = tipo;
+    if (clienteId) document.getElementById('edit-cliente').value = clienteId;
+    document.getElementById('edit-ativo').value = ativo;
+    document.getElementById('modal-edit').showModal();
+  }
 </script>
 {% endblock %}

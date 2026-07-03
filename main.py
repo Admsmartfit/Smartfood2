@@ -313,16 +313,26 @@ async def admin_desativar_usuario(
     db: Session = Depends(get_db),
 ):
     if user_id == request.session.get("user_id"):
-        return HTMLResponse('<div class="alert-error">Você não pode desativar sua própria conta.</div>', status_code=422)
+        return HTMLResponse('<div class="alert-error">Você não pode desativar ou remover sua própria conta.</div>', status_code=422)
     user = db.query(models.User).filter_by(id=user_id).first()
     if not user:
         raise HTTPException(404)
-    user.ativo = 0
-    db.commit()
-    return HTMLResponse(
-        '<div class="alert-success">Usuário desativado.</div>'
-        '<script>setTimeout(()=>location.reload(),600)</script>',
-    )
+    
+    if user.ativo == 0:
+        db.delete(user)
+        db.commit()
+        return HTMLResponse(
+            '<div class="alert-success">Usuário removido permanentemente.</div>'
+            '<script>setTimeout(()=>location.reload(),600)</script>',
+        )
+    else:
+        user.ativo = 0
+        db.commit()
+        return HTMLResponse(
+            '<div class="alert-success">Usuário desativado.</div>'
+            '<script>setTimeout(()=>location.reload(),600)</script>',
+        )
+
 
 
 @app.get("/")
