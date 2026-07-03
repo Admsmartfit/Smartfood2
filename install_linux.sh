@@ -38,9 +38,9 @@ echo ""
 echo "[3/6] Copiando arquivos do projeto para ${INSTALL_DIR} ..."
 mkdir -p "$INSTALL_DIR"
 
-# Copia tudo EXCETO venv (para não carregar venv do Windows ou versão antiga)
+# Copia tudo EXCETO venv, caches e o banco de dados sqlite para não sobrescrever dados de produção
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-rsync -a --exclude='venv/' --exclude='__pycache__/' --exclude='*.pyc' \
+rsync -a --exclude='venv/' --exclude='__pycache__/' --exclude='*.pyc' --exclude='smartfood.db' \
     "${SOURCE_DIR}/" "${INSTALL_DIR}/"
 
 chown -R "${APP_USER}:${APP_USER}" "$INSTALL_DIR"
