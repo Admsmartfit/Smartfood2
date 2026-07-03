@@ -59,6 +59,9 @@ sudo -u "$APP_USER" python3 -m venv "${INSTALL_DIR}/venv"
 VENV_PIP="${INSTALL_DIR}/venv/bin/pip"
 VENV_PY="${INSTALL_DIR}/venv/bin/python3"
 
+# Muda para o diretório de instalação para executar os comandos com o contexto correto
+cd "${INSTALL_DIR}"
+
 sudo -u "$APP_USER" "$VENV_PIP" install -q --upgrade pip
 sudo -u "$APP_USER" "$VENV_PIP" install -q -r "${INSTALL_DIR}/requirements.txt"
 
