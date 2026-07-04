@@ -1689,6 +1689,21 @@ async def print_label(
     )
 
 
+@app.get("/labels/teste-impressora", response_class=HTMLResponse)
+async def teste_impressora(ip: str = "192.168.15.90", port: int = 9100):
+    """Envia um print de teste para verificar se a impressora está acessível."""
+    ok, msg = label_service.enviar_teste_impressora(ip, port)
+    icon  = "✅" if ok else "❌"
+    ping_html = (
+        f'<div style="padding:.85rem 1rem;border-radius:.5rem;font-size:.85rem;'
+        f'background:{"#f0fdf4" if ok else "#fef2f2"};'
+        f'border:1px solid {"#bbf7d0" if ok else "#fecaca"};'
+        f'color:{"#15803d" if ok else "#dc2626"}">'
+        f'{icon} <strong>{ip}:{port}</strong> — {msg}</div>'
+    )
+    return HTMLResponse(content=ping_html)
+
+
 # ── Module 2: Batches ─────────────────────────────────────────────────────────
 
 @app.post("/batches", response_class=HTMLResponse)

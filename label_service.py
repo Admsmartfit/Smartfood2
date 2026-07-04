@@ -135,6 +135,7 @@ def generate_tspl(template_data: dict, print_data: dict, quantity: int = 1) -> s
     """
     Return a TSPL command string ready to send to an Elgin/Argox/TSC printer.
     TSPL accepts SIZE in mm but TEXT/QRCODE positions in dots (203 DPI).
+    Line endings MUST be CRLF — Elgin L42 Pro firmware requires it.
     """
     w = template_data["width_mm"]
     h = template_data["height_mm"]
@@ -142,6 +143,7 @@ def generate_tspl(template_data: dict, print_data: dict, quantity: int = 1) -> s
     lines = [
         f"SIZE {w} mm, {h} mm",
         "GAP 2 mm, 0 mm",
+        "DIRECTION 0",      # impressão da borda superior
         "CLS",
         "CODEPAGE UTF-8",
     ]
@@ -155,8 +157,8 @@ def generate_tspl(template_data: dict, print_data: dict, quantity: int = 1) -> s
 
         if fname == "qr_code":
             qr_url = print_data.get("qr_url", "").replace('"', "")
-            cell_width = max(1, min(10, int(field.get("size", 25) / 6)))
-            lines.append(f'QRCODE {x},{y},L,{cell_width},A,0,"{qr_url}"')
+            cell_width = max(2, min(10, int(field.get("size", 25) / 6)))
+            lines.append(f'QRCODE {x},{y},L,{cell_width},A,0,M2,"{qr_url}"')
         else:
             text = str(print_data.get(fname, "")).replace('"', "'")
             label = field.get("label", "")
@@ -166,7 +168,8 @@ def generate_tspl(template_data: dict, print_data: dict, quantity: int = 1) -> s
             lines.append(f'TEXT {x},{y},"0",0,{scale},{scale},"{text}"')
 
     lines.append(f"PRINT {max(1, quantity)},1")
-    return "\n".join(lines)
+    # Elgin L42 Pro exige CRLF entre comandos
+    return "\r\n".join(lines) + "\r\n"
 
 
 # ── TCP socket send ───────────────────────────────────────────────────────────
@@ -175,19 +178,50 @@ def send_to_printer(ip: str, port: int, command: str) -> tuple[bool, str]:
     """
     Open a TCP connection to the printer, send the command string, close.
     Returns (success: bool, message: str).
+
+    Elgin L42 Pro specifics:
+    - Port 9100 (RAW TCP)
+    - Needs SHUT_WR signal so the printer knows the job is complete
+    - UTF-8 encoding (firmware >= 2023); falls back to latin-1 if encode fails
     """
     try:
+        data = command.encode("utf-8")
+    except Exception:
+        data = command.encode("latin-1", errors="replace")
+
+    try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.settimeout(5)
+            sock.settimeout(8)
             sock.connect((ip, int(port)))
-            sock.sendall(command.encode("utf-8"))
+            sock.sendall(data)
+            # Sinaliza FIN ao servidor para que a impressora saiba que o job acabou
+            sock.shutdown(socket.SHUT_WR)
+            # Aguarda ACK/resposta (até 3s) — opcional mas evita fechamento prematuro
+            try:
+                sock.recv(256)
+            except Exception:
+                pass
         return True, f"Enviado para {ip}:{port} com sucesso."
     except socket.timeout:
-        return False, f"Timeout ao conectar em {ip}:{port}."
+        return False, f"Timeout ao conectar em {ip}:{port}. Verifique se a impressora está na rede."
     except ConnectionRefusedError:
-        return False, f"Conexão recusada em {ip}:{port}. Verifique se a impressora está ligada."
+        return False, f"Conexão recusada em {ip}:{port}. Impressora desligada ou IP errado."
     except OSError as exc:
         return False, f"Erro de rede: {exc}"
+
+
+def enviar_teste_impressora(ip: str, port: int = 9100) -> tuple[bool, str]:
+    """Envia um print de teste mínimo (TSPL) para verificar conectividade."""
+    cmd = "\r\n".join([
+        "SIZE 100 mm, 50 mm",
+        "GAP 2 mm, 0 mm",
+        "CLS",
+        'TEXT 16,8,"0",0,2,2,"SmartFood Ops 360"',
+        'TEXT 16,60,"0",0,1,1,"Teste de impressao OK"',
+        'TEXT 16,90,"0",0,1,1,"Elgin L42 Pro"',
+        "PRINT 1,1",
+    ]) + "\r\n"
+    return send_to_printer(ip, port, cmd)
 
 
 # ── QR SVG generation ─────────────────────────────────────────────────────────
