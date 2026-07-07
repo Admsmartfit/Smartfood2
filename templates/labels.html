@@ -688,13 +688,12 @@
       zoom: 7,        // px per mm
       previewBatchIdx: -1,
       showTemplates: true,
-      savedTemplates: {{ templates_json | tojson }
-  },
-  batches: { { batches_json | tojson } },
-  availableFields: AVAILABLE_FIELDS,
-    recipesIngredients: { { recipes_ingredients | tojson } },
-  ingredientsSummary: '',
-    selectedRecipeId: '',
+      savedTemplates: {{ templates_json | tojson }},
+      batches: {{ batches_json | tojson }},
+      availableFields: AVAILABLE_FIELDS,
+      recipesIngredients: {{ recipes_ingredients | tojson }},
+      ingredientsSummary: '',
+      selectedRecipeId: '',
 
       // ── Print state ──────────────────────────────────────────────
       printBatchId: '',
