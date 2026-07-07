@@ -32,6 +32,7 @@ if ! id "$APP_USER" &>/dev/null; then
 else
     echo "     Usuário '${APP_USER}' já existe."
 fi
+usermod -aG lp "$APP_USER" || true
 
 # ── 4. Copia arquivos do projeto ───────────────────────────
 echo ""

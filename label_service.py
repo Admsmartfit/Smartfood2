@@ -11,6 +11,8 @@ At print time, mm values are converted to dots (203 DPI = ~8 dots/mm).
 
 import json
 import socket
+import subprocess
+import shutil
 from datetime import datetime, timedelta
 from io import BytesIO
 
@@ -172,31 +174,79 @@ def generate_tspl(template_data: dict, print_data: dict, quantity: int = 1) -> s
     return "\r\n".join(lines) + "\r\n"
 
 
-# ── TCP socket send ───────────────────────────────────────────────────────────
+# ── TCP / CUPS local printing send ─────────────────────────────────────────────
+
+def _is_cups_printer(printer_name: str) -> bool:
+    """Check if the given name is listed as a CUPS printer."""
+    if not shutil.which("lpstat"):
+        return False
+    try:
+        res = subprocess.run(["lpstat", "-v"], capture_output=True, text=True, timeout=3)
+        if res.returncode == 0:
+            for line in res.stdout.splitlines():
+                parts = line.split()
+                if len(parts) >= 3 and parts[0] == "device" and parts[1] == "for":
+                    name = parts[2].rstrip(":")
+                    if name == printer_name:
+                        return True
+    except Exception:
+        pass
+    return False
+
+
+def _print_via_cups(printer_name: str, data: bytes) -> tuple[bool, str]:
+    """Print raw bytes to a CUPS printer using the lp command."""
+    if not shutil.which("lp"):
+        return False, "Comando 'lp' do CUPS não encontrado no sistema Linux."
+    try:
+        p = subprocess.Popen(
+            ["lp", "-d", printer_name, "-o", "raw"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        stdout, stderr = p.communicate(input=data, timeout=8)
+        if p.returncode == 0:
+            msg = stdout.decode("utf-8", errors="replace").strip()
+            return True, f"Enviado para a impressora local CUPS '{printer_name}' con sucesso. {msg}"
+        else:
+            err = stderr.decode("utf-8", errors="replace").strip()
+            return False, f"Erro ao enviar para CUPS '{printer_name}': {err}"
+    except Exception as e:
+        return False, f"Erro ao iniciar o subprocesso lp: {e}"
+
 
 def send_to_printer(ip: str, port: int, command: str) -> tuple[bool, str]:
     """
-    Open a TCP connection to the printer, send the command string, close.
+    Open a TCP connection to the network printer, or send to a local CUPS printer.
     Returns (success: bool, message: str).
-
-    Elgin L42 Pro specifics:
-    - Port 9100 (RAW TCP)
-    - Needs SHUT_WR signal so the printer knows the job is complete
-    - UTF-8 encoding (firmware >= 2023); falls back to latin-1 if encode fails
     """
     try:
         data = command.encode("utf-8")
     except Exception:
         data = command.encode("latin-1", errors="replace")
 
+    # Determine if printing to a CUPS printer or raw TCP Socket
+    use_cups = False
+    if shutil.which("lp") and ip:
+        if _is_cups_printer(ip):
+            use_cups = True
+        elif not any(c in ip for c in (".", ":")):
+            # Simple heuristic: no dots or colons indicates a queue name rather than IP/hostname
+            use_cups = True
+
+    if use_cups:
+        return _print_via_cups(ip, data)
+
+    # Fallback to TCP raw socket
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.settimeout(8)
             sock.connect((ip, int(port)))
             sock.sendall(data)
-            # Sinaliza FIN ao servidor para que a impressora saiba que o job acabou
+            # Signal FIN to socket so the printer knows the job is complete
             sock.shutdown(socket.SHUT_WR)
-            # Aguarda ACK/resposta (até 3s) — opcional mas evita fechamento prematuro
+            # Wait for response (up to 3s) to prevent premature connection close
             try:
                 sock.recv(256)
             except Exception:
