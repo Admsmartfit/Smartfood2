@@ -9,7 +9,9 @@ Coordinate system used in fields_config: millimetres from top-left corner.
 At print time, mm values are converted to dots (203 DPI = ~8 dots/mm).
 """
 
+import glob
 import json
+import os
 import socket
 import subprocess
 import shutil
@@ -174,86 +176,111 @@ def generate_tspl(template_data: dict, print_data: dict, quantity: int = 1) -> s
     return "\r\n".join(lines) + "\r\n"
 
 
-# ── TCP / CUPS local printing send ─────────────────────────────────────────────
+# ── USB / CUPS / TCP printing ─────────────────────────────────────────────────
 
-def _is_cups_printer(printer_name: str) -> bool:
-    """Check if the given name is listed as a CUPS printer."""
-    if not shutil.which("lpstat"):
-        return False
+def _find_usb_device() -> str | None:
+    """Return the first available USB printer device file (/dev/usb/lp* or /dev/lp*)."""
+    candidates = sorted(glob.glob("/dev/usb/lp*")) + sorted(glob.glob("/dev/lp*"))
+    for dev in candidates:
+        if os.path.exists(dev):
+            return dev
+    return None
+
+
+def _print_usb_direct(data: bytes) -> tuple[bool, str]:
+    """Write raw bytes directly to the USB printer device, bypassing CUPS filters."""
+    dev = _find_usb_device()
+    if not dev:
+        return False, "Dispositivo USB não encontrado em /dev/usb/lp* ou /dev/lp*."
     try:
-        res = subprocess.run(["lpstat", "-v"], capture_output=True, text=True, timeout=3)
-        if res.returncode == 0:
-            for line in res.stdout.splitlines():
-                parts = line.split()
-                if len(parts) >= 3 and parts[0] == "device" and parts[1] == "for":
-                    name = parts[2].rstrip(":")
-                    if name == printer_name:
-                        return True
-    except Exception:
-        pass
-    return False
+        with open(dev, "wb") as f:
+            f.write(data)
+        return True, f"Enviado diretamente para {dev} (USB raw)."
+    except PermissionError:
+        return False, (
+            f"Sem permissão para escrever em {dev}. "
+            "Execute: sudo usermod -aG lp smartfood && sudo systemctl restart smartfood"
+        )
+    except OSError as exc:
+        return False, f"Erro ao escrever em {dev}: {exc}"
 
 
-def _print_via_cups(printer_name: str, data: bytes) -> tuple[bool, str]:
-    """Print raw bytes to a CUPS printer using the lp command."""
-    if not shutil.which("lp"):
-        return False, "Comando 'lp' do CUPS não encontrado no sistema Linux."
+def _print_via_lpr(queue: str, data: bytes) -> tuple[bool, str]:
+    """Send raw bytes via lpr -l (literal mode — bypasses CUPS driver filters)."""
+    if not shutil.which("lpr"):
+        return False, "Comando 'lpr' não encontrado."
     try:
         p = subprocess.Popen(
-            ["lp", "-d", printer_name, "-o", "raw"],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            ["lpr", "-P", queue, "-l"],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         )
-        stdout, stderr = p.communicate(input=data, timeout=8)
+        _, stderr = p.communicate(input=data, timeout=10)
         if p.returncode == 0:
-            msg = stdout.decode("utf-8", errors="replace").strip()
-            return True, f"Enviado para a impressora local CUPS '{printer_name}' con sucesso. {msg}"
-        else:
-            err = stderr.decode("utf-8", errors="replace").strip()
-            return False, f"Erro ao enviar para CUPS '{printer_name}': {err}"
-    except Exception as e:
-        return False, f"Erro ao iniciar o subprocesso lp: {e}"
+            return True, f"Enviado para fila CUPS '{queue}' (modo literal)."
+        err = stderr.decode("utf-8", errors="replace").strip()
+        return False, f"lpr erro: {err}"
+    except Exception as exc:
+        return False, f"lpr exceção: {exc}"
 
 
 def send_to_printer(ip: str, port: int, command: str) -> tuple[bool, str]:
     """
-    Open a TCP connection to the network printer, or send to a local CUPS printer.
-    Returns (success: bool, message: str).
+    Envia os comandos TSPL/ZPL para a impressora.
+
+    Lógica de detecção:
+    - ip sem pontos/dois-pontos → fila CUPS (impressora USB local)
+      Tentativas: (1) escrita direta em /dev/usb/lp*  (2) lpr -l  (3) lp -o raw
+    - ip com pontos → impressora de rede via TCP socket (porta 9100)
     """
     try:
         data = command.encode("utf-8")
     except Exception:
         data = command.encode("latin-1", errors="replace")
 
-    # Determine if printing to a CUPS printer or raw TCP Socket
-    use_cups = False
-    if shutil.which("lp") and ip:
-        if _is_cups_printer(ip):
-            use_cups = True
-        elif not any(c in ip for c in (".", ":")):
-            # Simple heuristic: no dots or colons indicates a queue name rather than IP/hostname
-            use_cups = True
+    is_local_queue = ip and not any(c in ip for c in (".", ":"))
 
-    if use_cups:
-        return _print_via_cups(ip, data)
+    if is_local_queue:
+        # 1. Escrita direta no dispositivo USB — bypassa o driver ELGIN e o Data Compress
+        ok, msg = _print_usb_direct(data)
+        if ok:
+            return ok, msg
 
-    # Fallback to TCP raw socket
+        # 2. lpr -l (literal mode) — segunda opção mais confiável para TSPL
+        ok, msg = _print_via_lpr(ip, data)
+        if ok:
+            return ok, msg
+
+        # 3. lp -o raw — último recurso via CUPS
+        if shutil.which("lp"):
+            try:
+                p = subprocess.Popen(
+                    ["lp", "-d", ip, "-o", "raw", "-t", "SmartFood"],
+                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+                _, stderr = p.communicate(input=data, timeout=10)
+                if p.returncode == 0:
+                    return True, f"Enviado para fila CUPS '{ip}' (raw)."
+                err = stderr.decode("utf-8", errors="replace").strip()
+                return False, f"Erro CUPS: {err}"
+            except Exception as exc:
+                return False, f"Erro lp: {exc}"
+
+        return False, f"Falha ao imprimir em '{ip}'. Verifique permissões: sudo usermod -aG lp smartfood"
+
+    # ── TCP socket para impressoras de rede ───────────────────────────────────
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.settimeout(8)
             sock.connect((ip, int(port)))
             sock.sendall(data)
-            # Signal FIN to socket so the printer knows the job is complete
             sock.shutdown(socket.SHUT_WR)
-            # Wait for response (up to 3s) to prevent premature connection close
             try:
                 sock.recv(256)
             except Exception:
                 pass
         return True, f"Enviado para {ip}:{port} com sucesso."
     except socket.timeout:
-        return False, f"Timeout ao conectar em {ip}:{port}. Verifique se a impressora está na rede."
+        return False, f"Timeout em {ip}:{port}. Impressora fora da rede."
     except ConnectionRefusedError:
         return False, f"Conexão recusada em {ip}:{port}. Impressora desligada ou IP errado."
     except OSError as exc:
