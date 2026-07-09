@@ -240,17 +240,7 @@ def send_to_printer(ip: str, port: int, command: str) -> tuple[bool, str]:
     is_local_queue = ip and not any(c in ip for c in (".", ":"))
 
     if is_local_queue:
-        # 1. Escrita direta no dispositivo USB — bypassa o driver ELGIN e o Data Compress
-        ok, msg = _print_usb_direct(data)
-        if ok:
-            return ok, msg
-
-        # 2. lpr -l (literal mode) — segunda opção mais confiável para TSPL
-        ok, msg = _print_via_lpr(ip, data)
-        if ok:
-            return ok, msg
-
-        # 3. lp sem filtros — fila já está em modo raw, não passar -o raw
+        # 1. Fila CUPS raw — método mais confiável quando a fila está em modo raw
         if shutil.which("lp"):
             try:
                 p = subprocess.Popen(
@@ -260,12 +250,19 @@ def send_to_printer(ip: str, port: int, command: str) -> tuple[bool, str]:
                 _, stderr = p.communicate(input=data, timeout=10)
                 if p.returncode == 0:
                     return True, f"Enviado para fila CUPS '{ip}'."
-                err = stderr.decode("utf-8", errors="replace").strip()
-                return False, f"Erro CUPS: {err}"
-            except Exception as exc:
-                return False, f"Erro lp: {exc}"
+            except Exception:
+                pass
+            # Se lp falhou, tenta lpr -l
+            ok, msg = _print_via_lpr(ip, data)
+            if ok:
+                return ok, msg
 
-        return False, f"Falha ao imprimir em '{ip}'. Verifique permissões: sudo usermod -aG lp smartfood"
+        # 2. Escrita direta no dispositivo USB (fallback)
+        ok, msg = _print_usb_direct(data)
+        if ok:
+            return ok, msg
+
+        return False, f"Falha ao imprimir em '{ip}'. Verifique: lpstat -v | grep {ip}"
 
     # ── TCP socket para impressoras de rede ───────────────────────────────────
     try:
