@@ -521,12 +521,10 @@
           <div class="flex flex-col lg:flex-row gap-5">
 
             <!-- Form column -->
-            <form hx-post :action="'/labels/' + (currentId || 0) + '/print'" hx-target="#print-result"
-              hx-swap="innerHTML" @htmx:after-request="$event.detail.successful && toast('Enviado para impressora')"
-              class="space-y-3 flex-1">
+            <form @submit.prevent="printLabel()" class="space-y-3 flex-1">
               <div>
                 <label class="text-xs text-gray-400 block mb-1">Template</label>
-                <select name="template_select" class="text-sm w-full"
+                <select class="text-sm w-full"
                   @change="loadTemplateById(parseInt($event.target.value)); fetchPrintPreview()">
                   <option value="0">— selecione —</option>
                   <template x-for="t in savedTemplates" :key="t.id">
@@ -536,7 +534,7 @@
               </div>
               <div>
                 <label class="text-xs text-gray-400 block mb-1">Lote</label>
-                <select name="batch_id" x-model="printBatchId" @change="fetchPrintPreview()" required
+                <select x-model="printBatchId" @change="fetchPrintPreview()" required
                   class="text-sm w-full">
                   <option value="">— selecione —</option>
                   <template x-for="b in batches" :key="b.id">
@@ -546,14 +544,15 @@
               </div>
               <div>
                 <label class="text-xs text-gray-400 block mb-1">Quantidade de Cópias</label>
-                <input type="number" name="quantity" x-model.number="printQty" min="1" max="5000"
+                <input type="number" x-model.number="printQty" min="1" max="5000"
                   class="text-sm w-full font-bold text-blue-300" />
               </div>
-              <button type="submit" :disabled="!currentId || !printBatchId || printQty < 1"
+              <button type="submit" :disabled="!currentId || !printBatchId || printQty < 1 || printing"
                 class="btn btn-primary btn-full text-sm" :title="!currentId ? 'Selecione um template primeiro' : ''">
-                🖨️ Enviar para Impressora
+                <span x-show="!printing">🖨️ Enviar para Impressora</span>
+                <span x-show="printing" x-cloak>⏳ Enviando...</span>
               </button>
-              <div id="print-result"></div>
+              <div id="print-result" x-html="printResult"></div>
             </form>
 
             <!-- Preview column -->
@@ -697,8 +696,10 @@
 
       // ── Print state ──────────────────────────────────────────────
       printBatchId: '',
-        printQty: 1,
-          printPreviewHtml: '',
+      printQty: 1,
+      printPreviewHtml: '',
+      printing: false,
+      printResult: '',
 
             // ── Batch form state ─────────────────────────────────────────
             batchNumber: '',
@@ -910,6 +911,26 @@
       toast(err.message, 'error');
     } finally {
       this.saving = false;
+    }
+  },
+
+  // ── Send to printer ──────────────────────────────────────────
+  async printLabel() {
+    if (!this.currentId || !this.printBatchId || this.printQty < 1) return;
+    this.printing = true;
+    this.printResult = '';
+    const body = new FormData();
+    body.append('batch_id', this.printBatchId);
+    body.append('quantity', this.printQty);
+    try {
+      const resp = await fetch(`/labels/${this.currentId}/print`, { method: 'POST', body });
+      const html = await resp.text();
+      this.printResult = html;
+      if (resp.ok) toast('Enviado para impressora');
+    } catch (err) {
+      this.printResult = `<div class="p-3 bg-red-500/20 text-red-300 rounded text-sm">❌ ${err.message}</div>`;
+    } finally {
+      this.printing = false;
     }
   },
 
