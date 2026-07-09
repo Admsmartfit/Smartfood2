@@ -250,16 +250,16 @@ def send_to_printer(ip: str, port: int, command: str) -> tuple[bool, str]:
         if ok:
             return ok, msg
 
-        # 3. lp -o raw — último recurso via CUPS
+        # 3. lp sem filtros — fila já está em modo raw, não passar -o raw
         if shutil.which("lp"):
             try:
                 p = subprocess.Popen(
-                    ["lp", "-d", ip, "-o", "raw", "-t", "SmartFood"],
+                    ["lp", "-d", ip],
                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 )
                 _, stderr = p.communicate(input=data, timeout=10)
                 if p.returncode == 0:
-                    return True, f"Enviado para fila CUPS '{ip}' (raw)."
+                    return True, f"Enviado para fila CUPS '{ip}'."
                 err = stderr.decode("utf-8", errors="replace").strip()
                 return False, f"Erro CUPS: {err}"
             except Exception as exc:
