@@ -147,9 +147,7 @@ def generate_tspl(template_data: dict, print_data: dict, quantity: int = 1) -> s
     lines = [
         f"SIZE {w} mm, {h} mm",
         "GAP 2 mm, 0 mm",
-        "DIRECTION 0",      # impressão da borda superior
         "CLS",
-        "CODEPAGE UTF-8",
     ]
 
     fields = json.loads(template_data.get("fields_config") or "[]")
