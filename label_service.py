@@ -9,8 +9,15 @@ Printer protocol reference
             instead of executing it, that printer doesn't understand TSPL —
             use PPLB instead, which IS Elgin's documented factory language)
   PPLB    : Elgin's native Eltron/EPL-style language (factory default on the L42).
-            No native QR symbology (only PDF417/MaxiCode) — QR is rendered as a
-            raster bitmap and sent via the GW image command instead.
+            No native QR symbology (only PDF417/MaxiCode), and its internal
+            fonts (1-5 + integer H/V multiplier) have no documented mm size —
+            on-printer testing (2026-07-30, L42 Pro Full) showed the "A" text
+            command's multiplier scaling badly overshoots width relative to
+            height (font_size_mm=6 measured 7mm tall but wide enough to
+            overrun an adjacent field 51mm away). So both QR *and* text are
+            rendered as raster bitmaps and sent via the GW image command —
+            this makes printed size a direct mm→pixel calculation instead of
+            a guess about the printer's internal font metrics.
 
 Coordinate system used in fields_config: millimetres from top-left corner.
 At print time, mm values are converted to dots (203 DPI = ~8 dots/mm).
@@ -31,6 +38,14 @@ try:
     _HAS_SEGNO = True
 except ImportError:  # pragma: no cover
     _HAS_SEGNO = False
+
+# Pillow is used only by the PPLB path, to raster text at an exact mm size
+# (see the PPLB note above for why we don't trust the printer's own fonts)
+try:
+    from PIL import Image, ImageDraw, ImageFont
+    _HAS_PIL = True
+except ImportError:  # pragma: no cover
+    _HAS_PIL = False
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -208,13 +223,62 @@ def generate_tspl(template_data: dict, print_data: dict, quantity: int = 1) -> s
 # command line ends in a bare LF (not CRLF). Params are comma-separated with
 # NO spaces. Coordinates are in dots (8 dots/mm @ 203dpi), same as TSPL/ZPL.
 #
-# Font size in mm: the manual documents only fixed internal font indices
-# (1-5) plus 1-8x H/V multipliers, not point sizes — there's no clean mm ↔
-# font-index table in the source manual, so font_size_mm is approximated via
-# the multiplier on a small base font. Expect to need on-printer tuning.
+# Text is rendered as a raster bitmap (via Pillow) and sent through the same
+# GW image command used for the QR code, rather than the native "A" text
+# command — see the module docstring for why: the internal fonts' mm size
+# isn't documented, and on-printer testing showed the multiplier scaling
+# overshoots width badly relative to height.
 
 _PPLB_ENCODING = "cp850"  # DOS850/Latin1 — "I8,1,001" below, documented as the
                           # common choice for Brazilian Portuguese on this printer
+
+_pplb_font_cache: dict[int, "ImageFont.FreeTypeFont"] = {}
+
+
+def _pplb_font(px: int) -> "ImageFont.FreeTypeFont":
+    font = _pplb_font_cache.get(px)
+    if font is None:
+        font = ImageFont.load_default(size=px)
+        _pplb_font_cache[px] = font
+    return font
+
+
+def _text_raster_pplb(text: str, font_size_mm: float, bold: bool = False) -> tuple[bytes, int, int, int]:
+    """
+    Render `text` as a 1-bit raster bitmap at an exact physical height (mm),
+    for PPLB's GW (binary image) command — see module docstring for why we
+    don't use PPLB's native "A" text command.
+
+    Returns (packed_bytes, bytes_per_row, width_px, height_px); (b"", 0, 0, 0)
+    if Pillow isn't installed or the text is empty (caller skips the field).
+    """
+    if not _HAS_PIL or not text:
+        return b"", 0, 0, 0
+
+    px = max(6, round(font_size_mm * DOTS_PER_MM))
+    font = _pplb_font(px)
+
+    probe = ImageDraw.Draw(Image.new("1", (1, 1), 1))
+    bbox = probe.textbbox((0, 0), text, font=font)
+    w = max(1, bbox[2] - bbox[0]) + (1 if bold else 0)  # +1px slack for the synthetic-bold pass
+    h = max(1, bbox[3] - bbox[1])
+
+    img = Image.new("1", (w, h), 1)  # white background
+    draw = ImageDraw.Draw(img)
+    draw.text((-bbox[0], -bbox[1]), text, font=font, fill=0)
+    if bold:
+        draw.text((-bbox[0] + 1, -bbox[1]), text, font=font, fill=0)  # synthetic bold: redraw offset 1px
+
+    bytes_per_row = (w + 7) // 8
+    raster = bytearray(bytes_per_row * h)
+    pixels = img.load()
+    for py in range(h):
+        row_offset = py * bytes_per_row
+        for px_ in range(w):
+            if pixels[px_, py] == 0:  # 0 = black
+                raster[row_offset + (px_ // 8)] |= (0x80 >> (px_ % 8))
+
+    return bytes(raster), bytes_per_row, w, h
 
 
 def _qr_raster_pplb(data: str, size_mm: float) -> tuple[bytes, int, int]:
@@ -293,14 +357,27 @@ def generate_pplb(template_data: dict, print_data: dict, quantity: int = 1) -> b
                 out += raster
                 out += b"\n"
         else:
-            text = str(print_data.get(fname, "")).replace('"', "'")
+            text = str(print_data.get(fname, ""))
             label = field.get("label", "")
             if label:
                 text = f"{label}: {text}"
-            mult = max(1, min(8, round(field.get("font_size_mm", 3) / 2)))
-            if field.get("bold"):
-                mult = min(8, mult + 1)
-            out += line(f'A{x},{y},0,2,{mult},{mult},N,"{text}"')
+            font_size_mm = field.get("font_size_mm", 3)
+            bold = bool(field.get("bold"))
+
+            raster, bytes_per_row, w_px, h_px = _text_raster_pplb(text, font_size_mm, bold)
+            if raster:
+                out += f"GW{x},{y},{bytes_per_row},{h_px}".encode(_PPLB_ENCODING) + b"\n"
+                out += raster
+                out += b"\n"
+            elif text:
+                # Fallback if Pillow isn't installed: PPLB's native "A" text command.
+                # mult calibrated from an on-printer measurement (2026-07-30, L42 Pro
+                # Full, internal font 2): height_mm ≈ 1.5*mult + 1 → mult = (h-1)/1.5.
+                # This still won't match width precisely (see module docstring) —
+                # install Pillow for accurate WYSIWYG sizing.
+                mult = max(1, min(8, round((font_size_mm - 1) / 1.5)))
+                safe_text = text.replace('"', "'")
+                out += line(f'A{x},{y},0,2,{mult},{mult},N,"{safe_text}"')
 
     out += line(f"P1,{max(1, quantity)}")
     return bytes(out)
