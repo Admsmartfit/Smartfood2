@@ -1641,6 +1641,10 @@ async def label_command(
 
     if tpl.printer_type == "TSPL":
         cmd = label_service.generate_tspl(template_data, print_data)
+    elif tpl.printer_type == "PPLB":
+        # PPLB embeds a binary QR raster inline — decode just for display,
+        # replacing undisplayable bytes; the actual bytes sent are untouched.
+        cmd = label_service.generate_pplb(template_data, print_data).decode("cp850", errors="replace")
     else:
         cmd = label_service.generate_zpl(template_data, print_data)
 
@@ -1688,6 +1692,9 @@ async def print_label(
     if tpl.printer_type == "TSPL":
         cmd = label_service.generate_tspl(template_data, print_data, quantity)
         encoding = "cp1252"
+    elif tpl.printer_type == "PPLB":
+        cmd = label_service.generate_pplb(template_data, print_data, quantity)
+        encoding = "cp850"  # unused for bytes, kept for consistency/clarity
     else:
         cmd = label_service.generate_zpl(template_data, print_data, quantity)
         encoding = "utf-8"

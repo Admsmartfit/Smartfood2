@@ -160,7 +160,7 @@ class LabelTemplate(Base):
     name = Column(String, nullable=False)
     width_mm = Column(Float, nullable=False, default=62.0)
     height_mm = Column(Float, nullable=False, default=40.0)
-    printer_type = Column(String, nullable=False, default="ZPL")   # ZPL | TSPL
+    printer_type = Column(String, nullable=False, default="ZPL")   # ZPL | TSPL | PPLB
     printer_ip = Column(String, default="")
     printer_port = Column(Integer, default=9100)
     # JSON array of field config objects
