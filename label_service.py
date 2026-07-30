@@ -9,15 +9,16 @@ Printer protocol reference
             instead of executing it, that printer doesn't understand TSPL —
             use PPLB instead, which IS Elgin's documented factory language)
   PPLB    : Elgin's native Eltron/EPL-style language (factory default on the L42).
-            No native QR symbology (only PDF417/MaxiCode), and its internal
-            fonts (1-5 + integer H/V multiplier) have no documented mm size —
-            on-printer testing (2026-07-30, L42 Pro Full) showed the "A" text
-            command's multiplier scaling badly overshoots width relative to
-            height (font_size_mm=6 measured 7mm tall but wide enough to
-            overrun an adjacent field 51mm away). So both QR *and* text are
-            rendered as raster bitmaps and sent via the GW image command —
-            this makes printed size a direct mm→pixel calculation instead of
-            a guess about the printer's internal font metrics.
+            No native QR symbology (only PDF417/MaxiCode). Text uses the native
+            "A" command with mult calibrated from an on-printer measurement
+            (2026-07-30, L42 Pro Full): height_mm ≈ 1.5*mult + 1 — the manual
+            doesn't document real mm sizes for the internal fonts, so this was
+            derived by printing a label and measuring it with a ruler. QR is
+            currently unavailable on PPLB: an attempt to render both text and
+            QR as raster bitmaps via the GW (binary image) command printed a
+            completely blank label, and the manual has no worked GW example to
+            check the wire framing against — see the PPLB section below for
+            the parked bitmap-rendering code, kept for once that's resolved.
 
 Coordinate system used in fields_config: millimetres from top-left corner.
 At print time, mm values are converted to dots (203 DPI = ~8 dots/mm).
@@ -223,11 +224,15 @@ def generate_tspl(template_data: dict, print_data: dict, quantity: int = 1) -> s
 # command line ends in a bare LF (not CRLF). Params are comma-separated with
 # NO spaces. Coordinates are in dots (8 dots/mm @ 203dpi), same as TSPL/ZPL.
 #
-# Text is rendered as a raster bitmap (via Pillow) and sent through the same
-# GW image command used for the QR code, rather than the native "A" text
-# command — see the module docstring for why: the internal fonts' mm size
-# isn't documented, and on-printer testing showed the multiplier scaling
-# overshoots width badly relative to height.
+# STATUS (2026-07-30): generate_pplb() uses the native "A" text command,
+# confirmed working on-printer (L42 Pro Full) once the mult calibration below
+# was fixed. _text_raster_pplb/_qr_raster_pplb (GW/binary-image based, defined
+# below) are NOT currently called — a label using only GW fields printed
+# completely blank, and the manual doesn't include a worked GW example to
+# cross-check framing against. They're kept because the raster logic itself
+# was verified correct in isolation (ASCII-rendered and inspected); once GW's
+# real wire framing is confirmed on this printer, wire them back into the loop
+# below instead of the "A" command / instead of skipping qr_code.
 
 _PPLB_ENCODING = "cp850"  # DOS850/Latin1 — "I8,1,001" below, documented as the
                           # common choice for Brazilian Portuguese on this printer
@@ -349,35 +354,32 @@ def generate_pplb(template_data: dict, print_data: dict, quantity: int = 1) -> b
         fname = field.get("field", "")
 
         if fname == "qr_code":
-            qr_url = print_data.get("qr_url", "")
-            size_mm = field.get("size", 25)
-            raster, bytes_per_row, side_px = _qr_raster_pplb(qr_url, size_mm)
-            if raster:
-                out += f"GW{x},{y},{bytes_per_row},{side_px}".encode(_PPLB_ENCODING) + b"\n"
-                out += raster
-                out += b"\n"
+            # GW (binary raster) is UNCONFIRMED on this hardware — a label using
+            # only GW fields (2026-07-30 test) printed completely blank, so QR is
+            # skipped here rather than risking another blank print. The QR still
+            # works fine via /labels/{id}/qr on ZPL/TSPL printers; re-enable this
+            # once GW's real framing is confirmed on an isolated test print.
+            continue
         else:
-            text = str(print_data.get(fname, ""))
+            text = str(print_data.get(fname, "")).replace('"', "'")
             label = field.get("label", "")
             if label:
                 text = f"{label}: {text}"
             font_size_mm = field.get("font_size_mm", 3)
             bold = bool(field.get("bold"))
 
-            raster, bytes_per_row, w_px, h_px = _text_raster_pplb(text, font_size_mm, bold)
-            if raster:
-                out += f"GW{x},{y},{bytes_per_row},{h_px}".encode(_PPLB_ENCODING) + b"\n"
-                out += raster
-                out += b"\n"
-            elif text:
-                # Fallback if Pillow isn't installed: PPLB's native "A" text command.
-                # mult calibrated from an on-printer measurement (2026-07-30, L42 Pro
-                # Full, internal font 2): height_mm ≈ 1.5*mult + 1 → mult = (h-1)/1.5.
-                # This still won't match width precisely (see module docstring) —
-                # install Pillow for accurate WYSIWYG sizing.
-                mult = max(1, min(8, round((font_size_mm - 1) / 1.5)))
-                safe_text = text.replace('"', "'")
-                out += line(f'A{x},{y},0,2,{mult},{mult},N,"{safe_text}"')
+            if not text:
+                continue
+            # Native "A" text command — confirmed working on this hardware
+            # (2026-07-30 test print). mult calibrated from an on-printer
+            # measurement (L42 Pro Full, internal font 2):
+            #   height_mm ≈ 1.5*mult + 1  →  mult = (font_size_mm - 1) / 1.5
+            # Width isn't calibrated (no measurement for it yet) — fields placed
+            # close together may still need manual spacing adjustment.
+            mult = max(1, min(8, round((font_size_mm - 1) / 1.5)))
+            if bold:
+                mult = min(8, mult + 1)
+            out += line(f'A{x},{y},0,2,{mult},{mult},N,"{text}"')
 
     out += line(f"P1,{max(1, quantity)}")
     return bytes(out)

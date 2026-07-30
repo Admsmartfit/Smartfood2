@@ -51,8 +51,9 @@ O script vai:
 
 Ao final, o script mostra o endereço de acesso:
 ```
-http://192.168.1.XX:8000
+http://192.168.15.XX:8000
 ```
+(o `XX` depende da sua rede — veja a seção 9 para o endereço real em uso hoje)
 
 ---
 
@@ -93,39 +94,50 @@ hostname -I
 
 ## 4. Configurar IP fixo (recomendado para rede local)
 
-Para que o endereço nunca mude, configure IP fixo na máquina Linux.
+Hoje o servidor recebe IP por **DHCP** (rede `192.168.15.0/24`, gateway `192.168.15.1`,
+interface `enp2s0` — confirme com `ip route | grep default` e `hostname -I`, já que
+isso muda conforme o roteador/rede do local). Sem IP fixo, o endereço pode trocar a
+cada reboot do roteador. Para fixar:
 
 ### Ubuntu/Debian com Netplan
 
 ```bash
-# Descobre a interface de rede
+# Descobre a interface de rede (no servidor atual: enp2s0)
 ip link show
 
 # Edita a configuração
 sudo nano /etc/netplan/01-netcfg.yaml
 ```
 
-Substitua o conteúdo por:
+Substitua o conteúdo por (ajuste a interface e o IP escolhido conforme sua rede real):
 
 ```yaml
 network:
   version: 2
   ethernets:
-    eth0:           # troque pelo nome da sua interface
+    enp2s0:         # troque pelo nome da sua interface (veja "ip link show")
       dhcp4: no
       addresses:
-        - 192.168.1.100/24   # IP fixo desejado
-      gateway4: 192.168.1.1  # IP do seu roteador
+        - 192.168.15.50/24    # IP fixo desejado — dentro da MESMA sub-rede do
+                               # roteador, fora da faixa que o DHCP distribui
+      gateway4: 192.168.15.1  # IP do seu roteador (veja "ip route | grep default")
       nameservers:
         addresses: [8.8.8.8, 8.8.4.4]
 ```
+
+⚠️ **Use a sub-rede real da sua rede**, não copie os números acima sem conferir —
+um IP fixo em `192.168.1.x` numa rede que na verdade é `192.168.15.x` (ou qualquer
+outra) fica inacessível: os pacotes não chegam a lugar nenhum (`ERR_CONNECTION_TIMED_OUT`
+no navegador, silêncio total no ping), mesmo com o serviço rodando perfeitamente.
+Descubra a sub-rede certa com `ip route | grep default` no servidor, e confira que o
+computador que vai acessar está na mesma faixa (`ipconfig` no Windows).
 
 Aplica:
 ```bash
 sudo netplan apply
 ```
 
-Após isso o SmartFood estará **sempre em `http://192.168.1.100:8000`**.
+Após isso o SmartFood estará **sempre no IP escolhido** (ex.: `http://192.168.15.50:8000`).
 
 ---
 
@@ -185,24 +197,42 @@ sudo systemctl disable smartfood
 
 ## 7. Atualizar o sistema
 
-Quando receber uma versão nova do projeto:
+Quando receber uma versão nova do projeto (ex.: copiada para `~/Smartfood2`):
 
 ```bash
 # Para o serviço
 sudo systemctl stop smartfood
 
-# Copia os arquivos novos (preserve o banco de dados!)
-sudo cp -r ~/smartfood_novo/* /opt/smartfood/
-# NÃO sobrescreva o arquivo smartfood.db se não quiser perder os dados
+# Copia os arquivos novos, SEM sobrescrever o banco de dados nem o venv de produção
+sudo rsync -a --exclude 'smartfood.db' --exclude 'venv' ~/Smartfood2/ /opt/smartfood/
+
+# Garante que tudo continua pertencendo ao usuário smartfood
 sudo chown -R smartfood:smartfood /opt/smartfood
 
-# Atualiza dependências
+# Atualiza dependências no venv de produção
 cd /opt/smartfood
 sudo -u smartfood venv/bin/pip install -r requirements.txt
 
 # Reinicia
 sudo systemctl start smartfood
+sudo systemctl status smartfood   # aperte "q" para sair do status
 ```
+
+⚠️ **Dois erros comuns nesse passo:**
+
+- **`--exclude 'venv'` é obrigatório.** O ambiente virtual de produção (`/opt/smartfood/venv`)
+  tem pacotes compilados específicos daquele ambiente — copiar um `venv/` de outra pasta por
+  cima quebra a instalação. Deixe o `pip install -r requirements.txt` do passo seguinte
+  atualizar os pacotes *dentro* do venv existente.
+- **Nunca rode `sudo -u smartfood venv/bin/pip ...` a partir da sua home (`~/Smartfood2`).**
+  Diretórios de home (`/home/SEU_USUARIO`) normalmente são `750` — só o dono acessa. O usuário
+  `smartfood` não consegue nem entrar ali, e qualquer comando dá `Permission denied` mesmo com
+  o arquivo tendo permissão de execução. Sempre rode o `pip install` de dentro de
+  `/opt/smartfood` (`cd /opt/smartfood` antes), como no exemplo acima.
+
+Se o `requirements.txt` ganhou uma dependência nova (aconteceu com `pillow`, usada para
+gerar QR Code e texto em bitmap na impressão de etiquetas), o `pip install -r
+requirements.txt` acima já resolve — não precisa de nenhum passo extra.
 
 ---
 
@@ -231,19 +261,24 @@ Adiciona a linha:
 
 ## 9. Acessar de outros dispositivos
 
-Com o servidor rodando, qualquer dispositivo na mesma rede local pode acessar:
+Com o servidor rodando, qualquer dispositivo na **mesma sub-rede** pode acessar. Endereço
+atual do servidor (DHCP, pode mudar — veja seção 4 para fixar):
 
 | Dispositivo | Endereço no navegador |
 |-------------|----------------------|
-| Computador / notebook | `http://192.168.1.100:8000` |
-| Celular | `http://192.168.1.100:8000` |
-| Tablet (produção, QR) | `http://192.168.1.100:8000` |
+| Computador / notebook | `http://192.168.15.8:8000` |
+| Celular | `http://192.168.15.8:8000` |
+| Tablet (produção, QR) | `http://192.168.15.8:8000` |
 
 **Funcionários com perfil CLIENTE** acessam direto em:
 ```
-http://192.168.1.100:8000/loja
+http://192.168.15.8:8000/loja
 ```
 (serão redirecionados automaticamente para o portal deles)
+
+Se o endereço parar de responder de um dia para o outro, confira primeiro se o IP do
+servidor mudou (`hostname -I` nele) antes de suspeitar do serviço — é o sintoma mais comum
+quando o IP vem de DHCP e não foi fixado (seção 4).
 
 ---
 
@@ -286,6 +321,25 @@ sudo systemctl restart smartfood
 ```
 
 ### Não consigo acessar de outro dispositivo
+
+Primeiro descarte o motivo mais comum — **sub-rede errada**, não firewall. Sintoma típico:
+o navegador trava em "carregando" e no final dá `ERR_CONNECTION_TIMED_OUT` (diferente de
+"conexão recusada" — timeout significa que o pacote nem chegou a um destino que responde).
+
+```bash
+# No servidor: confirma o IP e a sub-rede atuais
+hostname -I
+ip route | grep default
+
+# No computador que está tentando acessar (Windows, PowerShell):
+# Get-NetIPAddress -AddressFamily IPv4
+```
+
+Se o servidor está em `192.168.15.x` e o computador em `192.168.1.x` (ou qualquer sub-rede
+diferente), eles simplesmente não se enxergam — não é bug do SmartFood nem do firewall.
+Corrija o IP usado no navegador (ou a configuração de rede) para a mesma faixa.
+
+Só depois de confirmar que ambos estão na mesma sub-rede, verifique o firewall:
 
 ```bash
 # Verifica se o firewall está bloqueando
