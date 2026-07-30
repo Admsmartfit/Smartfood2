@@ -1469,6 +1469,16 @@ async def labels_page(request: Request, db: Session = Depends(get_db)):
     })
 
 
+def _validate_label_dims(width_mm: float, height_mm: float) -> None:
+    """Sanity bounds covering common thermal label printers (2"-8.6" wide rolls) —
+    catches data-entry mistakes (e.g. cm typed instead of mm) before they reach
+    the printer, without hard-coding one specific printer model's max width."""
+    if not (10 <= width_mm <= 220):
+        raise HTTPException(422, detail="Largura da etiqueta deve estar entre 10mm e 220mm.")
+    if not (5 <= height_mm <= 400):
+        raise HTTPException(422, detail="Altura da etiqueta deve estar entre 5mm e 400mm.")
+
+
 @app.post("/labels")
 async def create_label_template(
     name: str = Form(...),
@@ -1480,6 +1490,7 @@ async def create_label_template(
     fields_config: str = Form("[]"),
     db: Session = Depends(get_db),
 ):
+    _validate_label_dims(width_mm, height_mm)
     tpl = models.LabelTemplate(
         name=name,
         width_mm=width_mm,
@@ -1524,6 +1535,7 @@ async def update_label_template(
     fields_config: str = Form("[]"),
     db: Session = Depends(get_db),
 ):
+    _validate_label_dims(width_mm, height_mm)
     tpl = db.query(models.LabelTemplate).filter_by(id=template_id).first()
     if not tpl:
         raise HTTPException(404)
@@ -1653,6 +1665,8 @@ async def print_label(
     if not batch:
         raise HTTPException(status_code=404, detail="Lote não encontrado")
 
+    quantity = max(1, min(quantity, 5000))
+
     template_data = {
         "width_mm": tpl.width_mm,
         "height_mm": tpl.height_mm,
@@ -1673,15 +1687,17 @@ async def print_label(
 
     if tpl.printer_type == "TSPL":
         cmd = label_service.generate_tspl(template_data, print_data, quantity)
+        encoding = "cp1252"
     else:
         cmd = label_service.generate_zpl(template_data, print_data, quantity)
+        encoding = "utf-8"
 
     if not tpl.printer_ip:
         return HTMLResponse(
             content='<div class="p-3 bg-yellow-500/20 text-yellow-300 rounded text-sm">⚠️ IP da impressora não configurado no template.</div>'
         )
 
-    ok, msg = label_service.send_to_printer(tpl.printer_ip, tpl.printer_port, cmd)
+    ok, msg = label_service.send_to_printer(tpl.printer_ip, tpl.printer_port, cmd, encoding=encoding)
     css = "green" if ok else "red"
     icon = "✅" if ok else "❌"
     return HTMLResponse(

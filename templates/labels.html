@@ -658,6 +658,13 @@
     expiry_date: '⏳', weight: '⚖️', ingredients_summary: '🥗', qr_code: '▣',
   };
 
+  // Prefix printed before each field's value (both on the canvas preview AND
+  // in the fields_config sent to the backend, so the editor WYSIWYG actually
+  // matches what generate_zpl/generate_tspl print).
+  const FIELD_PREFIXES = {
+    batch_number: 'Lote', production_date: 'Fab', expiry_date: 'Val', weight: 'Peso',
+  };
+
   // Available field types the user can add
   const AVAILABLE_FIELDS = [
     { type: 'product_name', label: 'Nome do Produto', isQr: false, font_size_mm: 4.5, bold: true },
@@ -779,14 +786,8 @@
       weight: batch.weight_kg + ' kg',
       ingredients_summary: batch.ingredients_summary,
     } : SAMPLE;
-    const prefixes = {
-      batch_number: 'Lote: ',
-      expiry_date: 'Validade: ',
-      production_date: 'Fabricação: ',
-      ingredients_summary: 'Ingredientes: ',
-    };
     const val = raw[type] || type;
-    return (prefixes[type] || '') + val;
+    return (FIELD_PREFIXES[type] ? FIELD_PREFIXES[type] + ': ' : '') + val;
   },
 
   fieldStyle(f) {
@@ -874,6 +875,7 @@
       } else {
         cfg.font_size_mm = f.font_size_mm || 3;
         cfg.bold = f.bold;
+        if (FIELD_PREFIXES[f.type]) cfg.label = FIELD_PREFIXES[f.type];
       }
       return cfg;
     });

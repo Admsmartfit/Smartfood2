@@ -66,17 +66,27 @@ def _fmt_date(value) -> str:
     return str(value)
 
 
-# ── Default fields_config ─────────────────────────────────────────────────────
+# ── QR sizing ─────────────────────────────────────────────────────────────────
+# QR "size" in fields_config is the desired physical side length in mm. The
+# printer (and segno, for the on-screen preview) picks the module count from
+# the payload + error-correction level, so we simulate that with segno to
+# convert "size in mm" into the printer's real dots-per-module / preview's
+# pixels-per-module — keeping ZPL, TSPL and the preview all at the same
+# physical size instead of each using its own ad-hoc scaling formula.
 
-DEFAULT_FIELDS_CONFIG = json.dumps([
-    {"field": "product_name",       "x": 2,  "y": 3,  "font_size_mm": 4.5, "bold": True},
-    {"field": "batch_number",       "x": 2,  "y": 10, "font_size_mm": 3,   "bold": False, "label": "Lote"},
-    {"field": "production_date",    "x": 2,  "y": 16, "font_size_mm": 3,   "bold": False, "label": "Fab"},
-    {"field": "expiry_date",        "x": 2,  "y": 22, "font_size_mm": 3,   "bold": False, "label": "Val"},
-    {"field": "weight",             "x": 2,  "y": 28, "font_size_mm": 3,   "bold": False, "label": "Peso"},
-    {"field": "ingredients_summary","x": 2,  "y": 34, "font_size_mm": 2.5, "bold": False},
-    {"field": "qr_code",            "x": 44, "y": 6,  "size": 28},
-], indent=None)
+QR_ECC_SEGNO = "q"   # segno's error param (lowercase) — mirrors TSPL "Q" / ZPL "QA," below
+_QR_FALLBACK_MODULES = 33  # used only if segno isn't installed
+
+
+def _qr_module_count(data: str) -> int:
+    """Modules per side of the QR symbol segno/the printer will generate for `data`."""
+    if _HAS_SEGNO:
+        try:
+            qr = segno.make(data, micro=False, error=QR_ECC_SEGNO)
+            return qr.symbol_size(border=0)[0]
+        except Exception:
+            pass
+    return _QR_FALLBACK_MODULES
 
 
 # ── ZPL (Zebra) ───────────────────────────────────────────────────────────────
@@ -109,8 +119,9 @@ def generate_zpl(template_data: dict, print_data: dict, quantity: int = 1) -> st
 
         if fname == "qr_code":
             qr_url = print_data.get("qr_url", "")
-            # magnification: size_mm / approx module count → clamp 2-10
-            mag = max(2, min(10, int(field.get("size", 25) * DOTS_PER_MM / 30)))
+            size_mm = field.get("size", 25)
+            modules = _qr_module_count(qr_url)
+            mag = max(2, min(10, round(size_mm * DOTS_PER_MM / modules)))
             lines += [
                 f"^FO{x},{y}",
                 f"^BQN,2,{mag}",
@@ -147,6 +158,9 @@ def generate_tspl(template_data: dict, print_data: dict, quantity: int = 1) -> s
     lines = [
         f"SIZE {w} mm, {h} mm",
         "GAP 2 mm, 0 mm",
+        "CODEPAGE 1252",   # Windows-1252 (Latin1) — required for á/ç/ã/õ etc; must
+                           # match the encoding used when the command is sent (see
+                           # send_to_printer's `encoding` argument).
         "CLS",
     ]
 
@@ -159,8 +173,10 @@ def generate_tspl(template_data: dict, print_data: dict, quantity: int = 1) -> s
 
         if fname == "qr_code":
             qr_url = print_data.get("qr_url", "").replace('"', "")
-            cell_width = max(2, min(10, int(field.get("size", 25) / 6)))
-            lines.append(f'QRCODE {x},{y},L,{cell_width},A,0,M2,"{qr_url}"')
+            size_mm = field.get("size", 25)
+            modules = _qr_module_count(qr_url)
+            cell_width = max(2, min(10, round(size_mm * DOTS_PER_MM / modules)))
+            lines.append(f'QRCODE {x},{y},Q,{cell_width},A,0,M2,"{qr_url}"')
         else:
             text = str(print_data.get(fname, "")).replace('"', "'")
             label = field.get("label", "")
@@ -221,9 +237,14 @@ def _print_via_lpr(queue: str, data: bytes) -> tuple[bool, str]:
         return False, f"lpr exceção: {exc}"
 
 
-def send_to_printer(ip: str, port: int, command: str) -> tuple[bool, str]:
+def send_to_printer(ip: str, port: int, command: str, encoding: str = "utf-8") -> tuple[bool, str]:
     """
     Envia os comandos TSPL/ZPL para a impressora.
+
+    `encoding` MUST match the charset the command string was built for:
+    - ZPL   → "utf-8"   (generate_zpl sets ^CI28, i.e. UTF-8 mode on the printer)
+    - TSPL  → "cp1252"  (generate_tspl sets CODEPAGE 1252; TSPL has no UTF-8 mode,
+                          so multi-byte UTF-8 would render accented chars as garbage)
 
     Lógica de detecção:
     - ip sem pontos/dois-pontos → fila CUPS (impressora USB local)
@@ -231,9 +252,9 @@ def send_to_printer(ip: str, port: int, command: str) -> tuple[bool, str]:
     - ip com pontos → impressora de rede via TCP socket (porta 9100)
     """
     try:
-        data = command.encode("utf-8")
-    except Exception:
-        data = command.encode("latin-1", errors="replace")
+        data = command.encode(encoding)
+    except (LookupError, UnicodeEncodeError):
+        data = command.encode(encoding, errors="replace")
 
     is_local_queue = ip and not any(c in ip for c in (".", ":"))
 
@@ -287,24 +308,25 @@ def enviar_teste_impressora(ip: str, port: int = 9100) -> tuple[bool, str]:
     cmd = "\r\n".join([
         "SIZE 100 mm, 50 mm",
         "GAP 2 mm, 0 mm",
+        "CODEPAGE 1252",
         "CLS",
         'TEXT 16,8,"0",0,2,2,"SmartFood Ops 360"',
         'TEXT 16,60,"0",0,1,1,"Teste de impressao OK"',
         'TEXT 16,90,"0",0,1,1,"Elgin L42 Pro"',
         "PRINT 1,1",
     ]) + "\r\n"
-    return send_to_printer(ip, port, cmd)
+    return send_to_printer(ip, port, cmd, encoding="cp1252")
 
 
 # ── QR SVG generation ─────────────────────────────────────────────────────────
 
-def _qr_svg(data: str, size_mm: float, scale: int) -> str:
-    """Return an inline SVG string for the given QR data."""
+def _qr_svg(data: str, size_mm: float, px_per_mm: float, module_scale_px: int) -> str:
+    """Return an inline SVG string for the given QR data, sized to size_mm at px_per_mm."""
     if _HAS_SEGNO:
         try:
-            qr = segno.make(data, micro=False, error="m")
+            qr = segno.make(data, micro=False, error=QR_ECC_SEGNO)
             buf = BytesIO()
-            qr.save(buf, kind="svg", scale=scale, border=1,
+            qr.save(buf, kind="svg", scale=max(1, module_scale_px), border=1,
                     dark="black", light="white")
             svg = buf.getvalue().decode("utf-8")
             start = svg.find("<svg")
@@ -313,7 +335,7 @@ def _qr_svg(data: str, size_mm: float, scale: int) -> str:
             pass  # fall through to placeholder
 
     # Fallback placeholder
-    px = int(size_mm * scale)
+    px = int(size_mm * px_per_mm)
     return (
         f'<svg width="{px}" height="{px}" xmlns="http://www.w3.org/2000/svg">'
         f'<rect width="{px}" height="{px}" fill="white" stroke="black" stroke-width="1.5"/>'
@@ -347,7 +369,9 @@ def generate_preview_html(template_data: dict, print_data: dict) -> str:
         if fname == "qr_code":
             qr_url = print_data.get("qr_url", "https://smartfood.app/qr/0")
             size_mm = field.get("size", 25)
-            svg = _qr_svg(qr_url, size_mm, scale=int(scale))
+            modules = _qr_module_count(qr_url)
+            module_scale_px = round(size_mm * scale / modules)
+            svg = _qr_svg(qr_url, size_mm, scale, module_scale_px)
             elements.append(
                 f'<div style="position:absolute;left:{x_px}px;top:{y_px}px;'
                 f'line-height:0">{svg}</div>'
